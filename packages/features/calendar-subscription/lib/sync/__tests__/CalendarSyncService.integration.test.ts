@@ -1,18 +1,20 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
-
 import type { CalendarSubscriptionEventItem } from "@calcom/features/calendar-subscription/lib/CalendarSubscriptionPort.interface";
+import { getCalendarEventUidSuffix } from "@calcom/lib/getCalendarEventUid";
 import type { BookingRepository } from "@calcom/lib/server/repository/booking";
 import type { SelectedCalendar } from "@calcom/prisma/client";
-
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
   type BookingWithEventType,
-  CalendarSyncService,
   buildMetadataFromCalendarEvent,
   buildRescheduleBookingData,
+  CalendarSyncService,
   extractBookingResponses,
   hasStartTimeChanged,
   mergeBookingResponsesWithEventData,
 } from "../CalendarSyncService";
+
+const CALENDAR_EVENT_UID_SUFFIX: string = getCalendarEventUidSuffix();
+const getCalendarEventUid = (bookingUid: string): string => `${bookingUid}${CALENDAR_EVENT_UID_SUFFIX}`;
 
 const { mockHandleCancelBooking, mockCreateBooking } = vi.hoisted(() => ({
   mockHandleCancelBooking: vi.fn().mockResolvedValue(undefined),
@@ -69,9 +71,11 @@ const makeBooking = (overrides: Partial<BookingWithEventType> = {}): BookingWith
     ...overrides,
   }) as unknown as BookingWithEventType;
 
-const makeEvent = (overrides: Partial<CalendarSubscriptionEventItem> = {}): CalendarSubscriptionEventItem => ({
+const makeEvent = (
+  overrides: Partial<CalendarSubscriptionEventItem> = {}
+): CalendarSubscriptionEventItem => ({
   id: "gcal-event-1",
-  iCalUID: "booking-uid-123@cal.com",
+  iCalUID: getCalendarEventUid("booking-uid-123"),
   start: new Date("2024-01-15T14:00:00Z"),
   end: new Date("2024-01-15T15:00:00Z"),
   busy: true,
@@ -545,14 +549,16 @@ describe("iCalUID parsing", () => {
   });
 
   test("iCalUID with multiple @ signs: only first part is used as bookingUid", async () => {
-    const event = makeEvent({ iCalUID: "uid-part@extra@cal.com", status: "cancelled" });
+    const event = makeEvent({
+      iCalUID: `uid-part@extra${CALENDAR_EVENT_UID_SUFFIX}`,
+      status: "cancelled",
+    });
     const booking = makeBooking({ uid: "uid-part" });
 
     mockBookingRepository.findBookingByUidWithEventType = vi.fn().mockResolvedValue(booking);
 
     await service.cancelBooking(event, mockSelectedCalendar.userId);
 
-    // split("@") → ["uid-part", "extra", "cal.com"], first element is "uid-part"
     expect(mockBookingRepository.findBookingByUidWithEventType).toHaveBeenCalledWith({
       bookingUid: "uid-part",
     });
@@ -561,7 +567,7 @@ describe("iCalUID parsing", () => {
 
   test("iCalUID with UUID format works correctly", async () => {
     const uuid = "550e8400-e29b-41d4-a716-446655440000";
-    const event = makeEvent({ iCalUID: `${uuid}@cal.com` });
+    const event = makeEvent({ iCalUID: getCalendarEventUid(uuid) });
     const booking = makeBooking({ uid: uuid });
 
     mockBookingRepository.findBookingByUidWithEventType = vi.fn().mockResolvedValue(booking);
@@ -573,18 +579,12 @@ describe("iCalUID parsing", () => {
     });
   });
 
-  test("iCalUID with no @ sign: entire string becomes bookingUid", async () => {
+  test("iCalUID with no @ sign returns early", async () => {
     const event = makeEvent({ iCalUID: "no-at-sign" });
-    const booking = makeBooking({ uid: "no-at-sign" });
-
-    mockBookingRepository.findBookingByUidWithEventType = vi.fn().mockResolvedValue(booking);
 
     await service.rescheduleBooking(event, mockSelectedCalendar.userId);
 
-    // split("@") → ["no-at-sign"], first element is "no-at-sign"
-    expect(mockBookingRepository.findBookingByUidWithEventType).toHaveBeenCalledWith({
-      bookingUid: "no-at-sign",
-    });
+    expect(mockBookingRepository.findBookingByUidWithEventType).not.toHaveBeenCalled();
   });
 
   test("iCalUID that is just '@' results in empty bookingUid and returns early", async () => {
@@ -592,7 +592,6 @@ describe("iCalUID parsing", () => {
 
     await service.cancelBooking(event, mockSelectedCalendar.userId);
 
-    // split("@") → ["", ""], first element is "" which is falsy
     expect(mockBookingRepository.findBookingByUidWithEventType).not.toHaveBeenCalled();
   });
 
@@ -861,9 +860,9 @@ describe("CalendarSyncService - error isolation", () => {
   });
 
   test("handleEvents: failure in one event does not block others", async () => {
-    const cancelEvent = makeEvent({ iCalUID: "cancel-uid@cal.com", status: "cancelled" });
+    const cancelEvent = makeEvent({ iCalUID: getCalendarEventUid("cancel-uid"), status: "cancelled" });
     const rescheduleEvent = makeEvent({
-      iCalUID: "reschedule-uid@cal.com",
+      iCalUID: getCalendarEventUid("reschedule-uid"),
       status: "confirmed",
       start: new Date("2024-01-20T14:00:00Z"),
     });
@@ -889,8 +888,8 @@ describe("CalendarSyncService - error isolation", () => {
   });
 
   test("handleEvents: DB error on one event does not block others", async () => {
-    const event1 = makeEvent({ iCalUID: "uid-1@cal.com", status: "confirmed" });
-    const event2 = makeEvent({ iCalUID: "uid-2@cal.com", status: "confirmed" });
+    const event1 = makeEvent({ iCalUID: getCalendarEventUid("uid-1"), status: "confirmed" });
+    const event2 = makeEvent({ iCalUID: getCalendarEventUid("uid-2"), status: "confirmed" });
 
     let callCount = 0;
     mockBookingRepository.findBookingByUidWithEventType = vi.fn().mockImplementation(() => {
@@ -911,7 +910,7 @@ describe("CalendarSyncService - error isolation", () => {
       userId: 99,
       userPrimaryEmail: "admin@company.com",
     });
-    const event = makeEvent({ iCalUID: "my-booking-uid@cal.com", status: "cancelled" });
+    const event = makeEvent({ iCalUID: getCalendarEventUid("my-booking-uid"), status: "cancelled" });
 
     mockBookingRepository.findBookingByUidWithEventType = vi.fn().mockResolvedValue(booking);
 
@@ -963,7 +962,7 @@ describe("CalendarSyncService - error isolation", () => {
 
   test("cancelBooking: skips when calendar owner is not the booking host", async () => {
     const booking = makeBooking({ uid: "booking-uid-123", userId: 99 });
-    const event = makeEvent({ iCalUID: "booking-uid-123@cal.com", status: "cancelled" });
+    const event = makeEvent({ iCalUID: getCalendarEventUid("booking-uid-123"), status: "cancelled" });
 
     mockBookingRepository.findBookingByUidWithEventType = vi.fn().mockResolvedValue(booking);
 
@@ -976,7 +975,7 @@ describe("CalendarSyncService - error isolation", () => {
   test("rescheduleBooking: skips when calendar owner is not the booking host", async () => {
     const booking = makeBooking({ uid: "booking-uid-123", userId: 99 });
     const event = makeEvent({
-      iCalUID: "booking-uid-123@cal.com",
+      iCalUID: getCalendarEventUid("booking-uid-123"),
       start: new Date("2024-01-20T14:00:00Z"),
     });
 
@@ -990,7 +989,7 @@ describe("CalendarSyncService - error isolation", () => {
 
   test("cancelBooking: skips booking without userId", async () => {
     const booking = makeBooking({ userId: null });
-    const event = makeEvent({ iCalUID: "booking-uid-123@cal.com", status: "cancelled" });
+    const event = makeEvent({ iCalUID: getCalendarEventUid("booking-uid-123"), status: "cancelled" });
 
     mockBookingRepository.findBookingByUidWithEventType = vi.fn().mockResolvedValue(booking);
 
@@ -1001,7 +1000,7 @@ describe("CalendarSyncService - error isolation", () => {
 
   test("cancelBooking: skips booking without userPrimaryEmail", async () => {
     const booking = makeBooking({ userPrimaryEmail: null });
-    const event = makeEvent({ iCalUID: "booking-uid-123@cal.com", status: "cancelled" });
+    const event = makeEvent({ iCalUID: getCalendarEventUid("booking-uid-123"), status: "cancelled" });
 
     mockBookingRepository.findBookingByUidWithEventType = vi.fn().mockResolvedValue(booking);
 
@@ -1011,8 +1010,8 @@ describe("CalendarSyncService - error isolation", () => {
   });
 
   test("handleEvents: correctly routes cancelled vs non-cancelled events", async () => {
-    const cancelledEvent = makeEvent({ iCalUID: "uid-a@cal.com", status: "cancelled" });
-    const confirmedEvent = makeEvent({ iCalUID: "uid-b@cal.com", status: "confirmed" });
+    const cancelledEvent = makeEvent({ iCalUID: getCalendarEventUid("uid-a"), status: "cancelled" });
+    const confirmedEvent = makeEvent({ iCalUID: getCalendarEventUid("uid-b"), status: "confirmed" });
 
     const bookingA = makeBooking({ uid: "uid-a" });
     const bookingB = makeBooking({ uid: "uid-b" });
@@ -1033,7 +1032,7 @@ describe("CalendarSyncService - error isolation", () => {
   });
 
   test("handleEvents: non-cancelled statuses (tentative, confirmed) all route to reschedule", async () => {
-    const tentativeEvent = makeEvent({ iCalUID: "uid-t@cal.com", status: "tentative" });
+    const tentativeEvent = makeEvent({ iCalUID: getCalendarEventUid("uid-t"), status: "tentative" });
     const bookingT = makeBooking({ uid: "uid-t" });
 
     mockBookingRepository.findBookingByUidWithEventType = vi.fn().mockResolvedValue(bookingT);

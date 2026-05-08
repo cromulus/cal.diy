@@ -1,10 +1,12 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
-
 import type { CalendarSubscriptionEventItem } from "@calcom/features/calendar-subscription/lib/CalendarSubscriptionPort.interface";
+import { getCalendarEventUidSuffix } from "@calcom/lib/getCalendarEventUid";
 import type { BookingRepository } from "@calcom/lib/server/repository/booking";
 import type { SelectedCalendar } from "@calcom/prisma/client";
-
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { CalendarSyncService } from "../CalendarSyncService";
+
+const CALENDAR_EVENT_UID_SUFFIX: string = getCalendarEventUidSuffix();
+const getCalendarEventUid = (bookingUid: string): string => `${bookingUid}${CALENDAR_EVENT_UID_SUFFIX}`;
 
 const { mockHandleCancelBooking, mockCreateBooking } = vi.hoisted(() => ({
   mockHandleCancelBooking: vi.fn().mockResolvedValue(undefined),
@@ -96,7 +98,7 @@ const mockBooking = {
 
 const mockCalComEvent: CalendarSubscriptionEventItem = {
   id: "event-1",
-  iCalUID: "test-booking-uid@cal.com",
+  iCalUID: getCalendarEventUid("test-booking-uid"),
   start: new Date("2023-12-01T10:00:00Z"),
   end: new Date("2023-12-01T11:00:00Z"),
   busy: true,
@@ -137,7 +139,7 @@ const mockNonCalComEvent: CalendarSubscriptionEventItem = {
 const mockCancelledEvent: CalendarSubscriptionEventItem = {
   ...mockCalComEvent,
   id: "event-3",
-  iCalUID: "cancelled-booking-uid@cal.com",
+  iCalUID: getCalendarEventUid("cancelled-booking-uid"),
   status: "cancelled",
 };
 
@@ -194,7 +196,7 @@ describe("CalendarSyncService", () => {
     test("should handle mixed case iCalUID", async () => {
       const eventWithMixedCase: CalendarSubscriptionEventItem = {
         ...mockCalComEvent,
-        iCalUID: "test-booking-uid@CAL.COM",
+        iCalUID: `test-booking-uid${CALENDAR_EVENT_UID_SUFFIX.toUpperCase()}`,
       };
 
       mockBookingRepository.findBookingByUidWithEventType = vi.fn().mockResolvedValue(mockBooking);
@@ -204,6 +206,19 @@ describe("CalendarSyncService", () => {
       expect(mockBookingRepository.findBookingByUidWithEventType).toHaveBeenCalledWith({
         bookingUid: "test-booking-uid",
       });
+    });
+
+    test("should ignore Cal.diy iCalUIDs from other instances", async () => {
+      const calDiyEvent: CalendarSubscriptionEventItem = {
+        ...mockCalComEvent,
+        iCalUID: "test-booking-uid@Cal.diy",
+      };
+
+      mockBookingRepository.findBookingByUidWithEventType = vi.fn().mockResolvedValue(mockBooking);
+
+      await service.handleEvents(mockSelectedCalendar, [calDiyEvent]);
+
+      expect(mockBookingRepository.findBookingByUidWithEventType).not.toHaveBeenCalled();
     });
 
     test("should handle events with null iCalUID", async () => {
@@ -254,10 +269,22 @@ describe("CalendarSyncService", () => {
     test("should return early when booking UID is malformed", async () => {
       const eventWithMalformedUID: CalendarSubscriptionEventItem = {
         ...mockCancelledEvent,
-        iCalUID: "@cal.com",
+        iCalUID: CALENDAR_EVENT_UID_SUFFIX,
       };
 
       await service.cancelBooking(eventWithMalformedUID, mockSelectedCalendar.userId);
+
+      expect(mockBookingRepository.findBookingByUidWithEventType).not.toHaveBeenCalled();
+      expect(mockHandleCancelBooking).not.toHaveBeenCalled();
+    });
+
+    test("should return early when iCalUID belongs to another instance", async () => {
+      const eventFromAnotherInstance: CalendarSubscriptionEventItem = {
+        ...mockCancelledEvent,
+        iCalUID: "cancelled-booking-uid@cal.com",
+      };
+
+      await service.cancelBooking(eventFromAnotherInstance, mockSelectedCalendar.userId);
 
       expect(mockBookingRepository.findBookingByUidWithEventType).not.toHaveBeenCalled();
       expect(mockHandleCancelBooking).not.toHaveBeenCalled();
@@ -279,7 +306,9 @@ describe("CalendarSyncService", () => {
       mockHandleCancelBooking.mockRejectedValue(new Error("Cancellation failed"));
 
       // Should not throw - errors are caught and logged
-      await expect(service.cancelBooking(mockCancelledEvent, mockSelectedCalendar.userId)).resolves.not.toThrow();
+      await expect(
+        service.cancelBooking(mockCancelledEvent, mockSelectedCalendar.userId)
+      ).resolves.not.toThrow();
 
       expect(mockBookingRepository.findBookingByUidWithEventType).toHaveBeenCalled();
       expect(mockHandleCancelBooking).toHaveBeenCalled();
@@ -290,7 +319,9 @@ describe("CalendarSyncService", () => {
         .fn()
         .mockRejectedValue(new Error("DB connection failed"));
 
-      await expect(service.cancelBooking(mockCancelledEvent, mockSelectedCalendar.userId)).resolves.not.toThrow();
+      await expect(
+        service.cancelBooking(mockCancelledEvent, mockSelectedCalendar.userId)
+      ).resolves.not.toThrow();
 
       expect(mockBookingRepository.findBookingByUidWithEventType).toHaveBeenCalled();
       expect(mockHandleCancelBooking).not.toHaveBeenCalled();
@@ -459,10 +490,22 @@ describe("CalendarSyncService", () => {
     test("should return early when booking UID is malformed", async () => {
       const eventWithMalformedUID: CalendarSubscriptionEventItem = {
         ...mockCalComEvent,
-        iCalUID: "@cal.com",
+        iCalUID: CALENDAR_EVENT_UID_SUFFIX,
       };
 
       await service.rescheduleBooking(eventWithMalformedUID, mockSelectedCalendar.userId);
+
+      expect(mockBookingRepository.findBookingByUidWithEventType).not.toHaveBeenCalled();
+      expect(mockCreateBooking).not.toHaveBeenCalled();
+    });
+
+    test("should return early when iCalUID belongs to another instance", async () => {
+      const eventFromAnotherInstance: CalendarSubscriptionEventItem = {
+        ...mockCalComEvent,
+        iCalUID: "test-booking-uid@cal.com",
+      };
+
+      await service.rescheduleBooking(eventFromAnotherInstance, mockSelectedCalendar.userId);
 
       expect(mockBookingRepository.findBookingByUidWithEventType).not.toHaveBeenCalled();
       expect(mockCreateBooking).not.toHaveBeenCalled();
@@ -489,7 +532,9 @@ describe("CalendarSyncService", () => {
       mockCreateBooking.mockRejectedValue(new Error("Rescheduling failed"));
 
       // Should not throw - errors are caught and logged
-      await expect(service.rescheduleBooking(eventWithDifferentStart, mockSelectedCalendar.userId)).resolves.not.toThrow();
+      await expect(
+        service.rescheduleBooking(eventWithDifferentStart, mockSelectedCalendar.userId)
+      ).resolves.not.toThrow();
 
       expect(mockBookingRepository.findBookingByUidWithEventType).toHaveBeenCalled();
       expect(mockCreateBooking).toHaveBeenCalled();
@@ -500,7 +545,9 @@ describe("CalendarSyncService", () => {
         .fn()
         .mockRejectedValue(new Error("DB connection failed"));
 
-      await expect(service.rescheduleBooking(mockCalComEvent, mockSelectedCalendar.userId)).resolves.not.toThrow();
+      await expect(
+        service.rescheduleBooking(mockCalComEvent, mockSelectedCalendar.userId)
+      ).resolves.not.toThrow();
 
       expect(mockBookingRepository.findBookingByUidWithEventType).toHaveBeenCalled();
       expect(mockCreateBooking).not.toHaveBeenCalled();

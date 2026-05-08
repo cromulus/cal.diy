@@ -1,14 +1,24 @@
 import type { CreateRegularBookingData } from "@calcom/features/bookings/lib/dto/types";
-import { IdempotencyKeyService } from "@calcom/lib/idempotencyKey/idempotencyKeyService";
 import handleCancelBooking from "@calcom/features/bookings/lib/handleCancelBooking";
 import type { BookingRepository } from "@calcom/features/bookings/repositories/BookingRepository";
 import type { CalendarSubscriptionEventItem } from "@calcom/features/calendar-subscription/lib/CalendarSubscriptionPort.interface";
+import { isCalendarEventUidForInstance } from "@calcom/lib/getCalendarEventUid";
+import { IdempotencyKeyService } from "@calcom/lib/idempotencyKey/idempotencyKeyService";
 import logger from "@calcom/lib/logger";
 import { safeStringify } from "@calcom/lib/safeStringify";
 import type { SelectedCalendar } from "@calcom/prisma/client";
 import { metrics } from "@sentry/nextjs";
 
-const log = logger.getSubLogger({ prefix: ["CalendarSyncService"] });
+const log: ReturnType<typeof logger.getSubLogger> = logger.getSubLogger({
+  prefix: ["CalendarSyncService"],
+});
+
+const getSyncableBookingUid = (iCalUID: string | null | undefined): string | null => {
+  if (!iCalUID || !isCalendarEventUidForInstance(iCalUID)) return null;
+
+  const [bookingUid] = iCalUID.split("@");
+  return bookingUid || null;
+};
 
 /**
  * Service to handle synchronization of calendar events.
@@ -30,7 +40,7 @@ export class CalendarSyncService {
   async handleEvents(
     selectedCalendar: SelectedCalendar,
     calendarSubscriptionEvents: CalendarSubscriptionEventItem[]
-  ) {
+  ): Promise<void> {
     log.debug("handleEvents", {
       externalId: selectedCalendar.externalId,
       countEvents: calendarSubscriptionEvents.length,
@@ -42,9 +52,8 @@ export class CalendarSyncService {
       },
     });
 
-    // only process cal.com calendar events
-    const calEvents = calendarSubscriptionEvents.filter((e) =>
-      e.iCalUID?.toLowerCase()?.endsWith("@cal.com")
+    const calEvents = calendarSubscriptionEvents.filter((event) =>
+      isCalendarEventUidForInstance(event.iCalUID)
     );
 
     metrics.distribution("calendar.sync.handleEvents.events_count", calEvents.length, {
@@ -76,10 +85,10 @@ export class CalendarSyncService {
    * @param event
    * @returns
    */
-  async cancelBooking(event: CalendarSubscriptionEventItem, calendarUserId: number) {
+  async cancelBooking(event: CalendarSubscriptionEventItem, calendarUserId: number): Promise<void> {
     const startTime = performance.now();
     log.debug("cancelBooking", { event });
-    const [bookingUid] = event.iCalUID?.split("@") ?? [undefined];
+    const bookingUid = getSyncableBookingUid(event.iCalUID);
     if (!bookingUid) {
       log.debug("Unable to sync, booking UID not found in iCalUID");
       return;
@@ -151,10 +160,10 @@ export class CalendarSyncService {
    * Reschedule a booking
    * @param event
    */
-  async rescheduleBooking(event: CalendarSubscriptionEventItem, calendarUserId: number) {
+  async rescheduleBooking(event: CalendarSubscriptionEventItem, calendarUserId: number): Promise<void> {
     const startTime = performance.now();
     log.debug("rescheduleBooking", { event });
-    const [bookingUid] = event.iCalUID?.split("@") ?? [undefined];
+    const bookingUid = getSyncableBookingUid(event.iCalUID);
     if (!bookingUid) {
       log.debug("Unable to sync, booking UID not found in iCalUID");
       return;
