@@ -5,6 +5,10 @@ set -x
 # NOTE: if these values are the same, this will be skipped.
 scripts/replace-placeholder.sh "$BUILT_NEXT_PUBLIC_WEBAPP_URL" "$NEXT_PUBLIC_WEBAPP_URL"
 
+if [ -z "$NEXTAUTH_URL_INTERNAL" ]; then
+  export NEXTAUTH_URL_INTERNAL="http://127.0.0.1:3000/api/auth"
+fi
+
 DATABASE_HOST_TO_WAIT_FOR="${DATABASE_HOST}"
 
 if [ -z "$DATABASE_HOST_TO_WAIT_FOR" ] && [ -n "$DATABASE_URL" ]; then
