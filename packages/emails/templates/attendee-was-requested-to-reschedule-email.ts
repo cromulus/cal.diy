@@ -1,7 +1,6 @@
 import { getManageLink } from "@calcom/lib/CalEventParser";
 import { EMAIL_FROM_NAME } from "@calcom/lib/constants";
 import type { CalendarEvent } from "@calcom/types/Calendar";
-
 import generateIcsFile, { GenerateIcsRole } from "../lib/generateIcsFile";
 import renderEmail from "../src/renderEmail";
 import OrganizerScheduledEmail from "./organizer-scheduled-email";
@@ -21,6 +20,7 @@ export default class AttendeeWasRequestedToRescheduleEmail extends OrganizerSche
         calEvent: this.calEvent,
         role: GenerateIcsRole.ATTENDEE,
         status: "CANCELLED",
+        recipient: this.calEvent.attendees[0],
       }),
       from: `${EMAIL_FROM_NAME} <${this.getMailerOptions().from}>`,
       to: toAddresses.join(","),

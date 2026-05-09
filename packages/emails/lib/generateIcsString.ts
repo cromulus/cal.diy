@@ -1,14 +1,12 @@
-import type { TFunction } from "i18next";
-import type { DateArray, ParticipationRole, EventStatus, ParticipationStatus } from "ics";
-import { createEvent } from "ics";
-import { RRule } from "rrule";
-
-import { getRichDescription } from "@calcom/lib/CalEventParser";
-import { getVideoCallUrlFromCalEvent } from "@calcom/lib/CalEventParser";
+import { getRichDescription, getVideoCallUrlFromCalEvent } from "@calcom/lib/CalEventParser";
 import { ORGANIZER_EMAIL_EXEMPT_DOMAINS } from "@calcom/lib/constants";
 import { ErrorCode } from "@calcom/lib/errorCodes";
 import { ErrorWithCode } from "@calcom/lib/errors";
 import type { CalendarEvent, Person } from "@calcom/types/Calendar";
+import type { TFunction } from "i18next";
+import type { DateArray, EventStatus, ParticipationRole, ParticipationStatus } from "ics";
+import { createEvent } from "ics";
+import { RRule } from "rrule";
 
 export enum BookingAction {
   Create = "create",
@@ -51,17 +49,19 @@ const generateIcsString = ({
   event,
   status,
   partstat = "ACCEPTED",
+  organizerEmailOverride,
   t,
 }: {
   event: ICSCalendarEvent;
   status: EventStatus;
   partstat?: ParticipationStatus;
+  organizerEmailOverride?: string | null;
   t?: TFunction;
 }): string | undefined => {
   const location = getVideoCallUrlFromCalEvent(event) || event.location;
 
   // Taking care of recurrence rule
-  let recurrenceRule: string | undefined = undefined;
+  let recurrenceRule: string | undefined;
   const icsRole: ParticipationRole = "REQ-PARTICIPANT";
   if (event.recurringEvent?.count) {
     // ics appends "RRULE:" already, so removing it from RRule generated string
@@ -72,8 +72,37 @@ const generateIcsString = ({
     .filter((domain) => domain.trim() !== "")
     .some((domain) => event.organizer.email.toLowerCase().endsWith(domain.toLowerCase()));
 
+  let organizerEmail = event.organizer.email;
+  if (event.hideOrganizerEmail && !isOrganizerExempt) {
+    organizerEmail = "no-reply@cal.com";
+  }
+  if (organizerEmailOverride) {
+    organizerEmail = organizerEmailOverride;
+  }
+
+  const eventUid = event.iCalUID || event.uid;
+  if (!eventUid) {
+    throw new ErrorWithCode(ErrorCode.BadRequest, "Calendar event is missing a UID");
+  }
+
+  const attendeeEntries = event.attendees.map((attendee: Person) => ({
+    name: attendee.name,
+    email: attendee.email,
+    partstat,
+    role: icsRole,
+    rsvp: true,
+  }));
+
+  const teamMemberEntries = event.team?.members?.map((member: Person) => ({
+    name: member.name,
+    email: member.email,
+    partstat,
+    role: icsRole,
+    rsvp: true,
+  }));
+
   const icsEvent = createEvent({
-    uid: event.iCalUID || event.uid!,
+    uid: eventUid,
     sequence: event.iCalSequence || 0,
     start: toICalDateArray(event.startTime),
     end: toICalDateArray(event.endTime),
@@ -83,29 +112,10 @@ const generateIcsString = ({
     description: getRichDescription(event, t),
     organizer: {
       name: event.organizer.name,
-      ...(event.hideOrganizerEmail && !isOrganizerExempt
-        ? { email: "no-reply@cal.com" }
-        : { email: event.organizer.email }),
+      email: organizerEmail,
     },
     ...{ recurrenceRule },
-    attendees: [
-      ...event.attendees.map((attendee: Person) => ({
-        name: attendee.name,
-        email: attendee.email,
-        partstat,
-        role: icsRole,
-        rsvp: true,
-      })),
-      ...(event.team?.members
-        ? event.team?.members.map((member: Person) => ({
-            name: member.name,
-            email: member.email,
-            partstat,
-            role: icsRole,
-            rsvp: true,
-          }))
-        : []),
-    ],
+    attendees: [...attendeeEntries, ...(teamMemberEntries ?? [])],
     location: location ?? undefined,
     method: "REQUEST",
     status,

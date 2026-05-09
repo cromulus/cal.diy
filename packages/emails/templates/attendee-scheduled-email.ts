@@ -44,6 +44,7 @@ export default class AttendeeScheduledEmail extends BaseEmail {
         calEvent: this.calEvent,
         role: GenerateIcsRole.ATTENDEE,
         status: "CONFIRMED",
+        recipient: this.attendee,
       }),
       to: `${this.attendee.name} <${this.attendee.email}>`,
       from: `${this.calEvent.organizer.name} <${this.getMailerOptions().from}>`,
