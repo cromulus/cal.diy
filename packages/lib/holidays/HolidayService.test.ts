@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
 import { GOOGLE_HOLIDAY_CALENDARS } from "./constants";
 import type { CachedHoliday } from "./HolidayServiceCachingProxy";
 
@@ -11,8 +10,8 @@ vi.mock("./HolidayServiceCachingProxy", () => ({
   HolidayServiceCachingProxy: vi.fn(),
 }));
 
-import { getHolidayServiceCachingProxy } from "./HolidayServiceCachingProxy";
 import { HolidayService } from "./HolidayService";
+import { getHolidayServiceCachingProxy } from "./HolidayServiceCachingProxy";
 
 const mockHolidays: CachedHoliday[] = [
   {
@@ -79,7 +78,7 @@ describe("HolidayService", () => {
 
       const holidays = await holidayService.getHolidaysWithStatus("US", []);
 
-      expect(holidays.find((h) => h.id === "christmas_day_2025")?.enabled).toBe(true);
+      expect(holidays.find((h) => h.id === "US:christmas_day_2025")?.enabled).toBe(true);
 
       vi.useRealTimers();
     });
@@ -89,9 +88,51 @@ describe("HolidayService", () => {
       vi.setSystemTime(new Date("2025-06-15"));
       vi.mocked(mockCachingProxy.getHolidaysForCountry).mockResolvedValue(mockHolidays);
 
+      const holidays = await holidayService.getHolidaysWithStatus("US", ["US:christmas_day_2025"]);
+
+      expect(holidays.find((h) => h.id === "US:christmas_day_2025")?.enabled).toBe(false);
+
+      vi.useRealTimers();
+    });
+
+    it("should keep legacy disabled holiday ids working", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2025-06-15"));
+      vi.mocked(mockCachingProxy.getHolidaysForCountry).mockResolvedValue(mockHolidays);
+
       const holidays = await holidayService.getHolidaysWithStatus("US", ["christmas_day_2025"]);
 
-      expect(holidays.find((h) => h.id === "christmas_day_2025")?.enabled).toBe(false);
+      expect(holidays.find((h) => h.id === "US:christmas_day_2025")?.enabled).toBe(false);
+
+      vi.useRealTimers();
+    });
+
+    it("should combine holidays from multiple selected holiday sets", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2025-06-15"));
+      vi.mocked(mockCachingProxy.getHolidaysForCountry).mockImplementation(async (countryCode) =>
+        countryCode === "US"
+          ? [mockHolidays[1]]
+          : [
+              {
+                id: "3",
+                countryCode: "CHRISTIAN",
+                eventId: "advent_2025",
+                name: "Advent",
+                date: new Date("2025-12-01"),
+                year: 2025,
+              },
+            ]
+      );
+
+      const holidays = await holidayService.getHolidaysWithStatus(["US", "CHRISTIAN"], []);
+
+      expect(mockCachingProxy.getHolidaysForCountry).toHaveBeenCalledWith("US", 2025);
+      expect(mockCachingProxy.getHolidaysForCountry).toHaveBeenCalledWith("CHRISTIAN", 2025);
+      expect(holidays.map((holiday) => holiday.id)).toEqual([
+        "CHRISTIAN:advent_2025",
+        "US:christmas_day_2025",
+      ]);
 
       vi.useRealTimers();
     });
@@ -117,12 +158,34 @@ describe("HolidayService", () => {
 
       const holidays = await holidayService.getHolidayDatesInRange(
         "US",
-        ["christmas_day_2025"],
+        ["US:christmas_day_2025"],
         new Date("2025-12-01"),
         new Date("2025-12-31")
       );
 
       expect(holidays).toEqual([]);
+    });
+
+    it("should request each selected holiday set within the date range", async () => {
+      vi.mocked(mockCachingProxy.getHolidaysInRange).mockResolvedValue([]);
+
+      await holidayService.getHolidayDatesInRange(
+        ["US", "CHRISTIAN"],
+        [],
+        new Date("2025-12-01"),
+        new Date("2025-12-31")
+      );
+
+      expect(mockCachingProxy.getHolidaysInRange).toHaveBeenCalledWith(
+        "US",
+        new Date("2025-12-01"),
+        new Date("2025-12-31")
+      );
+      expect(mockCachingProxy.getHolidaysInRange).toHaveBeenCalledWith(
+        "CHRISTIAN",
+        new Date("2025-12-01"),
+        new Date("2025-12-31")
+      );
     });
   });
 });

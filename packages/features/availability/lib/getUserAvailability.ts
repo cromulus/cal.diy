@@ -872,6 +872,15 @@ export class UserAvailabilityService {
       }
 
       // Match OOO pattern: key by the date string (already in YYYY-MM-DD UTC format)
+      const existingHoliday = result[date];
+      if (existingHoliday) {
+        result[date] = {
+          ...existingHoliday,
+          reason: `${existingHoliday.reason}, ${holiday.name}`,
+        };
+        continue;
+      }
+
       result[date] = {
         fromUser: null,
         toUser: null,

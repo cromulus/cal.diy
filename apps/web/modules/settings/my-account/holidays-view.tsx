@@ -11,8 +11,8 @@ import { Button } from "@calcom/ui/components/button";
 import { Select, Switch } from "@calcom/ui/components/form";
 import { Icon } from "@calcom/ui/components/icon";
 import { SkeletonContainer, SkeletonText } from "@calcom/ui/components/skeleton";
-import { TriangleAlertIcon } from "@coss/ui/icons";
 import { showToast } from "@calcom/ui/components/toast";
+import { TriangleAlertIcon } from "@coss/ui/icons";
 import { memo, useCallback, useMemo } from "react";
 import { OutOfOfficeToggleGroup } from "~/settings/outOfOffice/OutOfOfficeToggleGroup";
 
@@ -36,7 +36,8 @@ function HolidaysCTA() {
 }
 
 type HolidayWithStatus = RouterOutputs["viewer"]["holidays"]["getUserSettings"]["holidays"][number];
-type Country = { code: string; name: string };
+type HolidaySet = { code: string; name: string };
+type HolidaySetOption = { value: string; label: string };
 
 const getFlagEmoji = (countryCode: string): string | null => {
   if (countryCode.length !== 2) return null;
@@ -47,51 +48,48 @@ const getFlagEmoji = (countryCode: string): string | null => {
   return String.fromCodePoint(...codePoints);
 };
 
-const CountrySelector = memo(function CountrySelector({
-  countries,
+const HolidaySetSelector = memo(function HolidaySetSelector({
+  holidaySets,
   value,
   onChange,
   isLoading,
 }: {
-  countries: Country[];
-  value: string;
-  onChange: (value: string) => void;
+  holidaySets: HolidaySet[];
+  value: string[];
+  onChange: (value: string[]) => void;
   isLoading: boolean;
 }) {
   const { t } = useLocale();
 
   const options = useMemo(
-    () => [
-      { value: "", label: t("select_country") },
-      ...countries.map((country) => {
+    () =>
+      holidaySets.map((country) => {
         const flag = getFlagEmoji(country.code);
         return {
           value: country.code,
           label: flag ? `${flag} ${country.name}` : country.name,
         };
       }),
-    ],
-    [countries, t]
+    [holidaySets]
   );
 
-  const selectedOption = useMemo(() => {
-    if (!value) return { value: "", label: t("select_country") };
-    const country = countries.find((c) => c.code === value);
-    if (!country) return { value, label: value };
-    const flag = getFlagEmoji(country.code);
-    return { value, label: flag ? `${flag} ${country.name}` : country.name };
-  }, [value, countries, t]);
+  const selectedOptions = useMemo(
+    () => options.filter((option) => value.includes(option.value)),
+    [options, value]
+  );
 
   if (isLoading) {
-    return <SkeletonText className="h-9 w-36" />;
+    return <SkeletonText className="h-9 w-56" />;
   }
 
   return (
-    <Select
-      className="w-auto min-w-[180px]"
-      value={selectedOption}
-      onChange={(option) => onChange(option?.value || "")}
+    <Select<HolidaySetOption, true>
+      className="w-full min-w-[220px] md:w-auto md:min-w-[280px]"
+      isMulti
+      value={selectedOptions}
+      onChange={(options) => onChange(options.map((option) => option.value))}
       options={options}
+      placeholder={t("select_holiday_sets")}
     />
   );
 });
@@ -184,6 +182,11 @@ export function HolidaysView() {
     error: settingsError,
   } = trpc.viewer.holidays.getUserSettings.useQuery({});
 
+  const selectedHolidaySetCodes = useMemo(
+    () => settings?.countryCodes ?? (settings?.countryCode ? [settings.countryCode] : []),
+    [settings?.countryCode, settings?.countryCodes]
+  );
+
   const disabledIds = useMemo(
     () => settings?.holidays?.filter((h) => !h.enabled).map((h) => h.id) || [],
     [settings?.holidays]
@@ -191,11 +194,11 @@ export function HolidaysView() {
 
   const { data: conflictsData } = trpc.viewer.holidays.checkConflicts.useQuery(
     {
-      countryCode: settings?.countryCode || "",
+      countryCodes: selectedHolidaySetCodes,
       disabledIds,
     },
     {
-      enabled: !!settings?.countryCode && !isLoadingSettings,
+      enabled: selectedHolidaySetCodes.length > 0 && !isLoadingSettings,
     }
   );
 
@@ -220,10 +223,10 @@ export function HolidaysView() {
     },
   });
 
-  const handleCountryChange = useCallback(
-    (countryCode: string) => {
+  const handleHolidaySetsChange = useCallback(
+    (countryCodes: string[]) => {
       updateSettingsMutation.mutate({
-        countryCode: countryCode || null,
+        countryCodes,
         resetDisabledHolidays: true,
       });
     },
@@ -290,24 +293,24 @@ export function HolidaysView() {
           )}
 
           <div className="border-subtle bg-muted overflow-hidden rounded-lg border p-5">
-            {/* Header with title and country selector */}
-            <div className="mb-4 flex items-center justify-between">
+            {/* Header with title and holiday-set selector */}
+            <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <h3 className="text-emphasis font-semibold">{t("holidays")}</h3>
                 <p className="text-subtle text-sm">{t("holidays_description")}</p>
               </div>
-              <CountrySelector
-                countries={countries || []}
-                value={settings?.countryCode || ""}
-                onChange={handleCountryChange}
+              <HolidaySetSelector
+                holidaySets={countries || []}
+                value={selectedHolidaySetCodes}
+                onChange={handleHolidaySetsChange}
                 isLoading={isLoadingCountries}
               />
             </div>
 
             {/* Holidays list - inner container */}
-            {settings?.countryCode ? (
+            {selectedHolidaySetCodes.length > 0 ? (
               <div className="border-subtle bg-default overflow-hidden rounded-md border justify-between">
-                {settings.holidays && settings.holidays.length > 0 ? (
+                {settings?.holidays && settings.holidays.length > 0 ? (
                   settings.holidays.map((holiday) => (
                     <HolidayListItem
                       key={holiday.id}
@@ -331,7 +334,7 @@ export function HolidaysView() {
                   <Icon name="calendar" className="text-default h-8 w-8" />
                 </div>
                 <h4 className="text-emphasis mb-1 font-medium">{t("no_holidays_selected")}</h4>
-                <p className="text-subtle text-sm">{t("select_country_to_see_holidays")}</p>
+                <p className="text-subtle text-sm">{t("select_holiday_sets_to_see_holidays")}</p>
               </div>
             )}
           </div>

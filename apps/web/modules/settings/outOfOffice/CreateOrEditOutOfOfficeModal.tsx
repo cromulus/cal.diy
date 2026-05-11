@@ -179,7 +179,9 @@ export const CreateOrEditOutOfOfficeEntryModal = ({
 
   // Check if selected dates overlap with any enabled holidays
   const overlappingHolidays = useMemo(() => {
-    if (!holidaySettings?.countryCode || !watchedDateRange?.startDate || !watchedDateRange?.endDate) {
+    const selectedHolidaySetCount =
+      holidaySettings?.countryCodes?.length ?? (holidaySettings?.countryCode ? 1 : 0);
+    if (selectedHolidaySetCount === 0 || !watchedDateRange?.startDate || !watchedDateRange?.endDate) {
       return [];
     }
 
@@ -187,7 +189,7 @@ export const CreateOrEditOutOfOfficeEntryModal = ({
     const startStr = dayjs(watchedDateRange.startDate).format("YYYY-MM-DD");
     const endStr = dayjs(watchedDateRange.endDate).format("YYYY-MM-DD");
 
-    return (holidaySettings.holidays || [])
+    return (holidaySettings?.holidays || [])
       .filter((h) => h.enabled && h.date >= startStr && h.date <= endStr)
       .map((h) => ({ date: h.date, holiday: { id: h.id, name: h.name } }));
   }, [holidaySettings, watchedDateRange]);

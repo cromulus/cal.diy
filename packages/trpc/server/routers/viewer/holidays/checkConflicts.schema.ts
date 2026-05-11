@@ -1,7 +1,8 @@
 import { z } from "zod";
 
 export const ZCheckConflictsSchema = z.object({
-  countryCode: z.string(),
+  countryCode: z.string().optional().default(""),
+  countryCodes: z.array(z.string()).optional(),
   disabledIds: z.array(z.string()).optional().default([]),
 });
 

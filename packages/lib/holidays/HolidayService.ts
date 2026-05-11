@@ -1,12 +1,13 @@
 import dayjs from "@calcom/dayjs";
 import { HolidayRepository } from "@calcom/features/holidays/repositories/HolidayRepository";
-
+import { ErrorCode } from "@calcom/lib/errorCodes";
+import { ErrorWithCode } from "@calcom/lib/errors";
+import { CONFLICT_CHECK_MONTHS, GOOGLE_HOLIDAY_CALENDARS } from "./constants";
 import {
-  getHolidayServiceCachingProxy,
   type CachedHoliday,
+  getHolidayServiceCachingProxy,
   type HolidayServiceCachingProxy,
 } from "./HolidayServiceCachingProxy";
-import { CONFLICT_CHECK_MONTHS, GOOGLE_HOLIDAY_CALENDARS } from "./constants";
 import type { Country, Holiday, HolidayWithStatus } from "./types";
 
 export interface ConflictingBooking {
@@ -23,6 +24,32 @@ export interface HolidayConflict {
   date: string;
   bookings: ConflictingBooking[];
 }
+
+const HOLIDAY_SET_SEPARATOR = ",";
+
+const parseHolidaySetCodes = (holidaySetCodes: string | string[] | null | undefined): string[] => {
+  const codes = Array.isArray(holidaySetCodes)
+    ? holidaySetCodes
+    : (holidaySetCodes?.split(HOLIDAY_SET_SEPARATOR) ?? []);
+
+  return Array.from(new Set(codes.map((code) => code.trim()).filter(Boolean)));
+};
+
+const serializeHolidaySetCodes = (holidaySetCodes: string[]): string | null => {
+  const codes = parseHolidaySetCodes(holidaySetCodes);
+  return codes.length > 0 ? codes.join(HOLIDAY_SET_SEPARATOR) : null;
+};
+
+const getHolidayId = (holiday: { countryCode: string; eventId: string }): string =>
+  `${holiday.countryCode}:${holiday.eventId}`;
+
+const getLegacyHolidayId = (holidayId: string): string => {
+  const separatorIndex = holidayId.lastIndexOf(":");
+  return separatorIndex === -1 ? holidayId : holidayId.slice(separatorIndex + 1);
+};
+
+const isHolidayDisabled = (holiday: { countryCode: string; eventId: string }, disabledIds: Set<string>) =>
+  disabledIds.has(getHolidayId(holiday)) || disabledIds.has(holiday.eventId);
 
 export class HolidayService {
   private cachingProxy: HolidayServiceCachingProxy;
@@ -49,48 +76,61 @@ export class HolidayService {
     return countryCode in GOOGLE_HOLIDAY_CALENDARS;
   }
 
+  private validateHolidaySetCodes(holidaySetCodes: string[]): void {
+    for (const code of holidaySetCodes) {
+      if (!this.isSupportedCountry(code)) {
+        throw new ErrorWithCode(ErrorCode.BadRequest, "Invalid holiday set");
+      }
+    }
+  }
+
   async getUserSettings(
     userId: number
-  ): Promise<{ countryCode: string | null; holidays: HolidayWithStatus[] }> {
+  ): Promise<{ countryCode: string | null; countryCodes: string[]; holidays: HolidayWithStatus[] }> {
     const settings = await HolidayRepository.findUserSettingsSelect({
       userId,
       select: { countryCode: true, disabledIds: true },
     });
 
-    if (!settings?.countryCode) {
-      return { countryCode: null, holidays: [] };
+    const countryCodes = parseHolidaySetCodes(settings?.countryCode);
+    if (countryCodes.length === 0) {
+      return { countryCode: null, countryCodes: [], holidays: [] };
     }
 
-    const holidays = await this.getHolidaysWithStatus(settings.countryCode, settings.disabledIds);
-    return { countryCode: settings.countryCode, holidays };
+    const holidays = await this.getHolidaysWithStatus(countryCodes, settings?.disabledIds ?? []);
+    return { countryCode: serializeHolidaySetCodes(countryCodes), countryCodes, holidays };
   }
 
   async updateSettings(
     userId: number,
-    countryCode: string | null,
+    countryCode: string | string[] | null,
     resetDisabledHolidays: boolean
-  ): Promise<{ countryCode: string | null; holidays: HolidayWithStatus[] }> {
-    if (countryCode && !this.isSupportedCountry(countryCode)) {
-      throw new Error("Invalid country code");
-    }
+  ): Promise<{ countryCode: string | null; countryCodes: string[]; holidays: HolidayWithStatus[] }> {
+    const countryCodes = parseHolidaySetCodes(countryCode);
+    this.validateHolidaySetCodes(countryCodes);
 
     const settings = await HolidayRepository.upsertUserSettings({
       userId,
-      countryCode,
+      countryCode: serializeHolidaySetCodes(countryCodes),
       resetDisabledHolidays,
     });
 
-    if (settings.countryCode) {
-      const holidays = await this.getHolidaysWithStatus(settings.countryCode, settings.disabledIds);
-      return { countryCode: settings.countryCode, holidays };
+    const selectedCountryCodes = parseHolidaySetCodes(settings.countryCode);
+    if (selectedCountryCodes.length > 0) {
+      const holidays = await this.getHolidaysWithStatus(selectedCountryCodes, settings.disabledIds);
+      return {
+        countryCode: serializeHolidaySetCodes(selectedCountryCodes),
+        countryCodes: selectedCountryCodes,
+        holidays,
+      };
     }
 
-    return { countryCode: null, holidays: [] };
+    return { countryCode: null, countryCodes: [], holidays: [] };
   }
 
   private cachedHolidayToHoliday(cached: CachedHoliday): Holiday {
     return {
-      id: cached.eventId,
+      id: getHolidayId(cached),
       name: cached.name,
       // Use UTC to ensure consistent date formatting regardless of server timezone
       // Holiday dates are stored as UTC midnight (e.g., 2025-12-25T00:00:00.000Z)
@@ -105,44 +145,59 @@ export class HolidayService {
     return cached.map((h) => this.cachedHolidayToHoliday(h));
   }
 
-  async getHolidaysWithStatus(countryCode: string, disabledIds: string[]): Promise<HolidayWithStatus[]> {
+  async getHolidaysWithStatus(
+    countryCode: string | string[],
+    disabledIds: string[]
+  ): Promise<HolidayWithStatus[]> {
     const currentYear = dayjs().year();
     const nextYear = currentYear + 1;
+    const countryCodes = parseHolidaySetCodes(countryCode);
 
-    const [currentYearHolidays, nextYearHolidays] = await Promise.all([
-      this.cachingProxy.getHolidaysForCountry(countryCode, currentYear),
-      this.cachingProxy.getHolidaysForCountry(countryCode, nextYear),
-    ]);
+    const holidaySets = await Promise.all(
+      countryCodes.flatMap((countryCode) => [
+        this.cachingProxy.getHolidaysForCountry(countryCode, currentYear),
+        this.cachingProxy.getHolidaysForCountry(countryCode, nextYear),
+      ])
+    );
 
-    const allHolidays = [...currentYearHolidays, ...nextYearHolidays];
+    const allHolidays = Array.from(
+      new Map(holidaySets.flat().map((holiday) => [getHolidayId(holiday), holiday])).values()
+    );
     const disabledSet = new Set(disabledIds);
     const today = dayjs().utc().startOf("day");
 
     return allHolidays
       .filter((h) => dayjs(h.date).utc().isAfter(today) || dayjs(h.date).utc().isSame(today))
       .map((h) => ({
-        id: h.eventId,
+        id: getHolidayId(h),
         name: h.name,
         // Use UTC for consistent date formatting
         date: dayjs(h.date).utc().format("YYYY-MM-DD"),
         year: h.year,
-        enabled: !disabledSet.has(h.eventId),
+        enabled: !isHolidayDisabled(h, disabledSet),
       }))
       .sort((a, b) => a.date.localeCompare(b.date));
   }
 
   async getHolidayDatesInRange(
-    countryCode: string,
+    countryCode: string | string[],
     disabledIds: string[],
     startDate: Date,
     endDate: Date
   ): Promise<Array<{ date: string; holiday: Holiday }>> {
+    const countryCodes = parseHolidaySetCodes(countryCode);
     const disabledSet = new Set(disabledIds);
 
-    const holidays = await this.cachingProxy.getHolidaysInRange(countryCode, startDate, endDate);
+    const holidays = (
+      await Promise.all(
+        countryCodes.map((countryCode) =>
+          this.cachingProxy.getHolidaysInRange(countryCode, startDate, endDate)
+        )
+      )
+    ).flat();
 
     return holidays
-      .filter((h) => !disabledSet.has(h.eventId))
+      .filter((h) => !isHolidayDisabled(h, disabledSet))
       .map((h) => ({
         // Use UTC for consistent date formatting
         date: dayjs(h.date).utc().format("YYYY-MM-DD"),
@@ -152,7 +207,7 @@ export class HolidayService {
   }
 
   async hasHolidaysInRange(
-    countryCode: string,
+    countryCode: string | string[],
     disabledIds: string[],
     startDate: Date,
     endDate: Date
@@ -165,55 +220,69 @@ export class HolidayService {
     userId: number,
     holidayId: string,
     enabled: boolean
-  ): Promise<{ countryCode: string; holidays: HolidayWithStatus[] }> {
+  ): Promise<{ countryCode: string; countryCodes: string[]; holidays: HolidayWithStatus[] }> {
     const settings = await HolidayRepository.findUserSettingsSelect({
       userId,
       select: { countryCode: true, disabledIds: true },
     });
 
-    if (!settings?.countryCode) {
-      throw new Error("No holiday country selected");
+    const countryCodes = parseHolidaySetCodes(settings?.countryCode);
+    if (!settings || countryCodes.length === 0) {
+      throw new ErrorWithCode(ErrorCode.BadRequest, "No holiday set selected");
     }
 
     // Validate against both current and next year holidays (matching getHolidaysWithStatus)
     const currentYear = dayjs().year();
     const nextYear = currentYear + 1;
-    const [currentYearHolidays, nextYearHolidays] = await Promise.all([
-      this.getHolidaysForCountry(settings.countryCode, currentYear),
-      this.getHolidaysForCountry(settings.countryCode, nextYear),
-    ]);
-    const allHolidays = [...currentYearHolidays, ...nextYearHolidays];
+    const allHolidays = (
+      await Promise.all(
+        countryCodes.flatMap((countryCode) => [
+          this.getHolidaysForCountry(countryCode, currentYear),
+          this.getHolidaysForCountry(countryCode, nextYear),
+        ])
+      )
+    ).flat();
 
-    if (!allHolidays.some((h) => h.id === holidayId)) {
-      throw new Error("Holiday not found for this country");
+    const normalizedHolidayId =
+      allHolidays.find((holiday) => holiday.id === holidayId || holiday.id.endsWith(`:${holidayId}`))?.id ??
+      holidayId;
+    const legacyHolidayId = getLegacyHolidayId(normalizedHolidayId);
+
+    if (!allHolidays.some((h) => h.id === normalizedHolidayId)) {
+      throw new ErrorWithCode(ErrorCode.NotFound, "Holiday not found for these holiday sets");
     }
 
     let disabledIds = [...settings.disabledIds];
     if (enabled) {
-      disabledIds = disabledIds.filter((id) => id !== holidayId);
-    } else if (!disabledIds.includes(holidayId)) {
-      disabledIds.push(holidayId);
+      disabledIds = disabledIds.filter((id) => id !== normalizedHolidayId && id !== legacyHolidayId);
+    } else if (!disabledIds.includes(normalizedHolidayId)) {
+      disabledIds.push(normalizedHolidayId);
     }
 
     await HolidayRepository.updateDisabledIds({ userId, disabledIds });
 
-    const updatedHolidays = await this.getHolidaysWithStatus(settings.countryCode, disabledIds);
-    return { countryCode: settings.countryCode, holidays: updatedHolidays };
+    const updatedHolidays = await this.getHolidaysWithStatus(countryCodes, disabledIds);
+    return {
+      countryCode: serializeHolidaySetCodes(countryCodes) ?? "",
+      countryCodes,
+      holidays: updatedHolidays,
+    };
   }
 
   async checkConflicts(
     userId: number,
-    countryCode: string,
+    countryCode: string | string[],
     disabledIds: string[]
   ): Promise<{ conflicts: HolidayConflict[] }> {
-    if (!countryCode) {
+    const countryCodes = parseHolidaySetCodes(countryCode);
+    if (countryCodes.length === 0) {
       return { conflicts: [] };
     }
 
     const startDate = new Date();
     const endDate = dayjs().add(CONFLICT_CHECK_MONTHS, "months").toDate();
 
-    const holidayDates = await this.getHolidayDatesInRange(countryCode, disabledIds, startDate, endDate);
+    const holidayDates = await this.getHolidayDatesInRange(countryCodes, disabledIds, startDate, endDate);
     if (holidayDates.length === 0) {
       return { conflicts: [] };
     }

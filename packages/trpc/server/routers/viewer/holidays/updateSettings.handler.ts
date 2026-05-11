@@ -1,8 +1,6 @@
 import { getHolidayService } from "@calcom/lib/holidays";
 import type { TrpcSessionUser } from "@calcom/trpc/server/types";
-
 import { TRPCError } from "@trpc/server";
-
 import type { TUpdateSettingsSchema } from "./updateSettings.schema";
 
 type UpdateSettingsOptions = {
@@ -18,7 +16,7 @@ export async function updateSettingsHandler({ ctx, input }: UpdateSettingsOption
   try {
     return await holidayService.updateSettings(
       ctx.user.id,
-      input.countryCode ?? null,
+      input.countryCodes ?? input.countryCode ?? null,
       input.resetDisabledHolidays
     );
   } catch (error) {
