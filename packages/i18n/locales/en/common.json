@@ -1345,6 +1345,8 @@
   "embed_allowed_domains_description": "Only these domains can embed your booking pages. Leave blank to allow any domain.",
   "embed_allowed_domains_placeholder": "cromie.org, www.cromie.org",
   "embed_allowed_domains_saved": "Allowed domains saved",
+  "embed_domains": "Embed domains",
+  "embed_domains_description": "Control which websites can embed your booking pages.",
   "save_allowed_domains": "Save domains",
   "connect_your_favourite_apps": "Connect your favourite apps.",
   "automation": "AI & Automation",

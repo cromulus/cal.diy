@@ -9,3 +9,7 @@ export async function revalidateSettingsProfile() {
 export async function revalidateSettingsCalendars() {
   revalidatePath("/settings/my-account/calendars");
 }
+
+export async function revalidateSettingsEmbedDomains() {
+  revalidatePath("/settings/my-account/embed-domains");
+}
