@@ -1,7 +1,6 @@
-import type { FunctionComponent, SVGProps } from "react";
-
 import { InstallAppButton } from "@calcom/app-store/InstallAppButton";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
+import type { RouterOutputs } from "@calcom/trpc/react";
 import { trpc } from "@calcom/trpc/react";
 import { Button } from "@calcom/ui/components/button";
 import {
@@ -11,16 +10,27 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@calcom/ui/components/dropdown";
+import type { FunctionComponent, SVGProps } from "react";
 
 interface AdditionalCalendarSelectorProps {
   isPending?: boolean;
+  installedCalendars?: RouterOutputs["viewer"]["apps"]["integrations"];
 }
 
-const AdditionalCalendarSelector = ({ isPending }: AdditionalCalendarSelectorProps): JSX.Element | null => {
+const AdditionalCalendarSelector = ({
+  isPending,
+  installedCalendars,
+}: AdditionalCalendarSelectorProps): JSX.Element | null => {
   const { t } = useLocale();
-  const [data] = trpc.viewer.apps.integrations.useSuspenseQuery({ variant: "calendar", onlyInstalled: true });
+  const { data } = trpc.viewer.apps.integrations.useQuery(
+    { variant: "calendar", onlyInstalled: true },
+    {
+      initialData: installedCalendars,
+      refetchOnWindowFocus: false,
+    }
+  );
 
-  const options = data.items.map((item) => ({
+  const options = (data?.items ?? []).map((item) => ({
     label: item.name,
     slug: item.slug,
     image: item.logo,

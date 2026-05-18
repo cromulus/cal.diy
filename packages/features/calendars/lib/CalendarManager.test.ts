@@ -1,11 +1,13 @@
 import { prisma } from "@calcom/prisma/__mocks__/prisma";
 import { getCalendar } from "@calcom/app-store/_utils/getCalendar";
-import type { CalendarEvent } from "@calcom/types/Calendar";
+import { AppCategories } from "@calcom/prisma/enums";
+import type { CalendarEvent, IntegrationCalendar } from "@calcom/types/Calendar";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   deduplicateCredentialsBasedOnSelectedCalendars,
   deleteEvent,
   getCalendarCredentials,
+  getConnectedCalendars,
   processEvent,
 } from "./CalendarManager";
 
@@ -63,6 +65,46 @@ function buildCredential(data: {
   };
 }
 
+type CalendarCredential = ReturnType<typeof getCalendarCredentials>[number];
+
+function buildCalendarCredential({
+  id,
+  calendars,
+}: {
+  id: number;
+  calendars: IntegrationCalendar[];
+}): CalendarCredential {
+  return {
+    integration: {
+      type: "google_calendar",
+      title: "Google Calendar",
+      name: "Google Calendar",
+      description: "Google Calendar",
+      variant: "calendar",
+      slug: "google-calendar",
+      categories: [AppCategories.calendar],
+      logo: "",
+      publisher: "",
+      url: "",
+      email: "",
+    } as CalendarCredential["integration"],
+    credential: {
+      ...buildCredential({
+        type: "google_calendar",
+        appId: "google-calendar",
+        id,
+        delegatedToId: null,
+        user: { email: "test@example.com" },
+      }),
+      encryptedKey: null,
+      delegationCredentialId: null,
+    } as CalendarCredential["credential"],
+    calendar: (() => ({
+      listCalendars: async () => calendars,
+    })) as CalendarCredential["calendar"],
+  };
+}
+
 function buildCalendarEvent(overrides = {}) {
   return {
     type: "test-event",
@@ -97,6 +139,34 @@ function buildCalendarEvent(overrides = {}) {
 }
 
 describe("CalendarManager tests", () => {
+  describe("fn: getConnectedCalendars", () => {
+    it("matches selected shared calendars by credential", async () => {
+      const sharedCalendar = {
+        externalId: "shared@example.com",
+        integration: "google_calendar",
+        name: "Shared calendar",
+      } satisfies IntegrationCalendar;
+
+      const { connectedCalendars } = await getConnectedCalendars(
+        [
+          buildCalendarCredential({ id: 1, calendars: [sharedCalendar] }),
+          buildCalendarCredential({ id: 2, calendars: [sharedCalendar] }),
+        ],
+        [
+          {
+            externalId: sharedCalendar.externalId,
+            integration: sharedCalendar.integration,
+            credentialId: 2,
+            delegationCredentialId: null,
+          },
+        ]
+      );
+
+      expect(connectedCalendars[0].calendars?.[0].isSelected).toBe(false);
+      expect(connectedCalendars[1].calendars?.[0].isSelected).toBe(true);
+    });
+  });
+
   describe("fn: processEvent", () => {
     it("should clear attendees when hideOrganizerEmail is true and no Zoho Calendar destination", () => {
       const calEvent = buildCalendarEvent({

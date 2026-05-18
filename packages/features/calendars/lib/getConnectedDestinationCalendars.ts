@@ -6,9 +6,9 @@ import {
   getConnectedCalendars,
 } from "@calcom/features/calendars/lib/CalendarManager";
 import { DestinationCalendarRepository } from "@calcom/features/calendars/repositories/DestinationCalendarRepository";
+import { SelectedCalendarRepository } from "@calcom/features/selectedCalendar/repositories/SelectedCalendarRepository";
 import { isDelegationCredential } from "@calcom/lib/delegationCredential";
 import logger from "@calcom/lib/logger";
-import { SelectedCalendarRepository } from "@calcom/features/selectedCalendar/repositories/SelectedCalendarRepository";
 import type { PrismaClient } from "@calcom/prisma";
 import prisma from "@calcom/prisma";
 import type { DestinationCalendar, SelectedCalendar, User } from "@calcom/prisma/client";
@@ -83,6 +83,8 @@ async function handleNoConnectedCalendars(user: UserWithCalendars) {
 type ToggledCalendarDetails = {
   externalId: string;
   integration: string;
+  credentialId?: number | null;
+  delegationCredentialId?: string | null;
 };
 
 async function handleNoDestinationCalendar({
@@ -125,6 +127,8 @@ async function handleNoDestinationCalendar({
       calendarToEnsureIsEnabledForConflictCheck = {
         externalId,
         integration,
+        credentialId,
+        delegationCredentialId,
       };
     }
   }
@@ -164,6 +168,7 @@ async function handleDestinationCalendarNotInConnectedCalendars({
     `Destination calendar isn't in connectedCalendars, update it to the first primary connected calendar for user ${user.id}`
   );
   const { integration = "", externalId = "", email: primaryEmail } = connectedCalendars[0].primary ?? {};
+  const { credentialId, delegationCredentialId } = connectedCalendars[0].primary ?? {};
   // Select the first calendar matching the primary by default since that will also be the destination calendar
   if (onboarding && externalId) {
     const calendarIndex = (connectedCalendars[0].calendars || []).findIndex(
@@ -174,6 +179,8 @@ async function handleDestinationCalendarNotInConnectedCalendars({
       calendarToEnsureIsEnabledForConflictCheck = {
         externalId,
         integration,
+        credentialId,
+        delegationCredentialId,
       };
     }
   }
@@ -216,10 +223,7 @@ async function ensureSelectedCalendarIsInDb({
   eventTypeId,
 }: {
   user: UserWithCalendars;
-  selectedCalendar: {
-    integration: string;
-    externalId: string;
-  };
+  selectedCalendar: ToggledCalendarDetails;
   eventTypeId: number | null;
 }) {
   console.log(
@@ -232,6 +236,8 @@ async function ensureSelectedCalendarIsInDb({
     userId: user.id,
     integration: selectedCalendar.integration,
     externalId: selectedCalendar.externalId,
+    credentialId: selectedCalendar.credentialId,
+    delegationCredentialId: selectedCalendar.delegationCredentialId,
     eventTypeId,
   });
 }
@@ -244,7 +250,14 @@ function getSelectedCalendars({
   eventTypeId: number | null;
 }): Pick<
   SelectedCalendar,
-  "externalId" | "integration" | "eventTypeId" | "updatedAt" | "googleChannelId" | "id"
+  | "externalId"
+  | "integration"
+  | "eventTypeId"
+  | "updatedAt"
+  | "googleChannelId"
+  | "id"
+  | "credentialId"
+  | "delegationCredentialId"
 >[] {
   if (eventTypeId) {
     return user.allSelectedCalendars.filter((calendar) => calendar.eventTypeId === eventTypeId);
@@ -255,11 +268,25 @@ function getSelectedCalendars({
 export type UserWithCalendars = Pick<User, "id" | "email"> & {
   allSelectedCalendars: Pick<
     SelectedCalendar,
-    "externalId" | "integration" | "eventTypeId" | "updatedAt" | "googleChannelId" | "id"
+    | "externalId"
+    | "integration"
+    | "eventTypeId"
+    | "updatedAt"
+    | "googleChannelId"
+    | "id"
+    | "credentialId"
+    | "delegationCredentialId"
   >[];
   userLevelSelectedCalendars: Pick<
     SelectedCalendar,
-    "externalId" | "integration" | "eventTypeId" | "updatedAt" | "googleChannelId" | "id"
+    | "externalId"
+    | "integration"
+    | "eventTypeId"
+    | "updatedAt"
+    | "googleChannelId"
+    | "id"
+    | "credentialId"
+    | "delegationCredentialId"
   >[];
   destinationCalendar: DestinationCalendar | null;
 };
@@ -369,6 +396,8 @@ export async function getConnectedDestinationCalendarsAndEnsureDefaultsInDb({
             calendarToEnsureIsEnabledForConflictCheck = {
               externalId: destinationCal.externalId,
               integration: destinationCal.integration || "",
+              credentialId: destinationCal.credentialId,
+              delegationCredentialId: destinationCal.delegationCredentialId,
             };
             return false;
           }

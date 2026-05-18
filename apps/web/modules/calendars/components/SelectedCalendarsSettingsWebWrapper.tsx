@@ -29,6 +29,7 @@ type SelectedCalendarsSettingsWebWrapperProps = {
   setScope?: (scope: SelectedCalendarSettingsScope) => void;
   disableConnectionModification?: boolean;
   connectedCalendars?: RouterOutputs["viewer"]["calendars"]["connectedCalendars"];
+  installedCalendars?: RouterOutputs["viewer"]["apps"]["integrations"];
 };
 
 const ConnectedCalendarList = ({
@@ -184,6 +185,7 @@ export const SelectedCalendarsSettingsWebWrapper = (props: SelectedCalendarsSett
           setScope={setScope}
           scope={scope}
           shouldDisableConnectionModification={shouldDisableConnectionModification}
+          installedCalendars={props.installedCalendars}
         />
         {!!(query.data?.connectedCalendars && query.data?.connectedCalendars.length > 0) && (
           <ConnectedCalendarList
@@ -246,6 +248,7 @@ const SelectedCalendarsSettingsHeading = (props: {
   setScope: (scope: SelectedCalendarSettingsScope) => void;
   scope: SelectedCalendarSettingsScope;
   shouldDisableConnectionModification?: boolean;
+  installedCalendars?: RouterOutputs["viewer"]["apps"]["integrations"];
 }) => {
   const { t } = useLocale();
   const optionsToSwitchScope = [
@@ -265,7 +268,10 @@ const SelectedCalendarsSettingsHeading = (props: {
           <div className="flex flex-col xl:flex-row xl:space-x-5">
             {props.isConnectedCalendarsPresent && (
               <div className="flex items-center">
-                <AdditionalCalendarSelector isPending={props.isPending} />
+                <AdditionalCalendarSelector
+                  isPending={props.isPending}
+                  installedCalendars={props.installedCalendars}
+                />
               </div>
             )}
           </div>

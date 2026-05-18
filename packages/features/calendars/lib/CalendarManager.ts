@@ -109,9 +109,42 @@ export type ConnectedCalendar = Omit<IntegrationCalendar, "primary"> & {
   delegationCredentialId: string | null;
 };
 
+type SelectedCalendarForMatching = {
+  externalId: string;
+  integration?: string | null;
+  credentialId?: number | null;
+  delegationCredentialId?: string | null;
+};
+
+const isSelectedCalendarForCredential = ({
+  selectedCalendar,
+  calendar,
+  credentialId,
+  delegationCredentialId,
+}: {
+  selectedCalendar: SelectedCalendarForMatching;
+  calendar: IntegrationCalendar;
+  credentialId: number;
+  delegationCredentialId: string | null;
+}) => {
+  if (selectedCalendar.externalId !== calendar.externalId) return false;
+  if (selectedCalendar.integration && selectedCalendar.integration !== calendar.integration) return false;
+
+  const selectedDelegationCredentialId = selectedCalendar.delegationCredentialId;
+  if (selectedDelegationCredentialId || delegationCredentialId) {
+    return selectedDelegationCredentialId === delegationCredentialId;
+  }
+
+  if (selectedCalendar.credentialId) {
+    return selectedCalendar.credentialId === credentialId;
+  }
+
+  return true;
+};
+
 export const getConnectedCalendars = async (
   calendarCredentials: ReturnType<typeof getCalendarCredentials>,
-  selectedCalendars: { externalId: string }[],
+  selectedCalendars: SelectedCalendarForMatching[],
   destinationCalendarExternalId?: string
 ): Promise<{
   connectedCalendars: {
@@ -160,7 +193,14 @@ export const getConnectedCalendars = async (
               ...cal,
               readOnly: cal.readOnly || false,
               primary: cal.primary || null,
-              isSelected: selectedCalendars.some((selected) => selected.externalId === cal.externalId),
+              isSelected: selectedCalendars.some((selectedCalendar) =>
+                isSelectedCalendarForCredential({
+                  selectedCalendar,
+                  calendar: cal,
+                  credentialId,
+                  delegationCredentialId,
+                })
+              ),
               credentialId,
               delegationCredentialId,
             };

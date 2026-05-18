@@ -1,21 +1,19 @@
-import { defaultResponderForAppDir } from "app/api/defaultResponderForAppDir";
-import { cookies, headers } from "next/headers";
-import type { NextRequest } from "next/server";
-import { NextResponse } from "next/server";
-import { z } from "zod";
-
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
 import {
   getCalendarCredentials,
   getConnectedCalendars,
 } from "@calcom/features/calendars/lib/CalendarManager";
+import { SelectedCalendarRepository } from "@calcom/features/selectedCalendar/repositories/SelectedCalendarRepository";
 import { UserRepository } from "@calcom/features/users/repositories/UserRepository";
 import { HttpError } from "@calcom/lib/http-error";
 import notEmpty from "@calcom/lib/notEmpty";
-import { SelectedCalendarRepository } from "@calcom/features/selectedCalendar/repositories/SelectedCalendarRepository";
 import prisma from "@calcom/prisma";
-
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
+import { defaultResponderForAppDir } from "app/api/defaultResponderForAppDir";
+import { cookies, headers } from "next/headers";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
+import { z } from "zod";
 
 const selectedCalendarSelectSchema = z.object({
   integration: z.string(),
@@ -48,10 +46,6 @@ async function authMiddleware() {
 async function getHandler() {
   const user = await authMiddleware();
 
-  const selectedCalendarIds = await SelectedCalendarRepository.findMany({
-    where: { userId: user.id },
-    select: { externalId: true },
-  });
   // get user's credentials + their connected integrations
   const calendarCredentials = getCalendarCredentials(user.credentials);
   // get all the connected integrations' calendars (from third party)
@@ -62,7 +56,7 @@ async function getHandler() {
 
   const calendars = connectedCalendars.flatMap((c) => c.calendars).filter(notEmpty);
   const selectableCalendars = calendars.map((cal) => {
-    return { selected: selectedCalendarIds.findIndex((s) => s.externalId === cal.externalId) > -1, ...cal };
+    return { selected: cal.isSelected, ...cal };
   });
 
   return NextResponse.json(selectableCalendars);

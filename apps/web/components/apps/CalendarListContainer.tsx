@@ -141,6 +141,7 @@ export function CalendarListContainer({
               destinationCalendarId={data.destinationCalendar?.externalId}
               isPending={mutation.isPending}
               connectedCalendars={data}
+              installedCalendars={installedCalendars}
             />
           </Suspense>
         </>
