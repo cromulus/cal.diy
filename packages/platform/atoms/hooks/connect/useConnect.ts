@@ -1,9 +1,7 @@
-import { useQuery, useMutation } from "@tanstack/react-query";
-
 import type { CALENDARS } from "@calcom/platform-constants";
-import { SUCCESS_STATUS, ERROR_STATUS } from "@calcom/platform-constants";
-import type { ApiResponse, ApiErrorResponse, CreateCalendarCredentialsInput } from "@calcom/platform-types";
-
+import { ERROR_STATUS, SUCCESS_STATUS } from "@calcom/platform-constants";
+import type { ApiErrorResponse, ApiResponse, CreateCalendarCredentialsInput } from "@calcom/platform-types";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import http from "../../lib/http";
 
 export const getQueryKey = (calendar: (typeof CALENDARS)[number]) => [`get-${calendar}-redirect-uri`];
@@ -45,19 +43,24 @@ export const useGetRedirectUrl = (
 export const useConnect = (calendar: (typeof CALENDARS)[number], redir?: string, isDryRun?: boolean) => {
   const { refetch } = useGetRedirectUrl(calendar, redir, isDryRun);
 
+  const navigateToRedirectUri = (redirectUri: string) => {
+    try {
+      if (window.top && window.top !== window) {
+        window.top.location.href = redirectUri;
+        return;
+      }
+    } catch {
+      // Cross-origin parents can block top-window navigation in embedded contexts.
+    }
+
+    window.location.href = redirectUri;
+  };
+
   const connect = async () => {
     const redirectUri = await refetch();
 
     if (redirectUri.data) {
-      let targetWindow;
-      if (window !== window.top && window.top) {
-        // if its an iframe, the target window should be the parent window
-        targetWindow = window.top;
-      } else {
-        targetWindow = window;
-      }
-
-      targetWindow.location.href = redirectUri.data;
+      navigateToRedirectUri(redirectUri.data);
     }
   };
 
