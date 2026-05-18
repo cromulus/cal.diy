@@ -1,9 +1,8 @@
 import type { Request, Response } from "express";
 import type { NextApiRequest, NextApiResponse, Redirect } from "next";
-import { redirect, notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { createMocks } from "node-mocks-http";
-import { describe, expect, it, vi } from "vitest";
-
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import withEmbedSsrAppDir from "./WithEmbedSSR";
 
 export type CustomNextApiRequest = NextApiRequest & Request;
@@ -58,10 +57,13 @@ function getServerSidePropsFnGenerator(
 
 interface ServerSidePropsContext {
   embedRelatedParams?: Record<string, string>;
+  headers?: Record<string, string>;
 }
 
-function getServerSidePropsContextArg({ embedRelatedParams = {} }: ServerSidePropsContext) {
-  const { req, res } = createMockNextJsRequest();
+function getServerSidePropsContextArg({ embedRelatedParams = {}, headers = {} }: ServerSidePropsContext) {
+  const { req, res } = createMockNextJsRequest({
+    headers,
+  });
   return {
     req,
     res,
@@ -73,6 +75,10 @@ function getServerSidePropsContextArg({ embedRelatedParams = {} }: ServerSidePro
 }
 
 describe("withEmbedSsrAppDir", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   describe("when gSSP returns redirect", () => {
     describe("when redirect destination is relative", () => {
       it("should redirect with layout and embed params from the current query", async () => {
@@ -224,6 +230,59 @@ describe("withEmbedSsrAppDir", () => {
         prop1: "value1",
         isEmbed: true,
       });
+    });
+
+    it("should allow and strip configured embed domains", async () => {
+      const withEmbedGetSsr = withEmbedSsrAppDir(
+        getServerSidePropsFnGenerator({
+          props: {
+            prop1: "value1",
+            embedAllowedDomains: ["cromie.org"],
+          },
+        })
+      );
+
+      const ret = await withEmbedGetSsr(
+        getServerSidePropsContextArg({
+          embedRelatedParams: {
+            layout: "week_view",
+            embed: "",
+          },
+          headers: {
+            referer: "https://cromie.org/schedule",
+          },
+        })
+      );
+
+      expect(ret).toEqual({
+        prop1: "value1",
+        isEmbed: true,
+      });
+    });
+
+    it("should throw notFound when configured embed domains do not match the referrer", async () => {
+      const withEmbedGetSsr = withEmbedSsrAppDir(
+        getServerSidePropsFnGenerator({
+          props: {
+            prop1: "value1",
+            embedAllowedDomains: ["cromie.org"],
+          },
+        })
+      );
+
+      await withEmbedGetSsr(
+        getServerSidePropsContextArg({
+          embedRelatedParams: {
+            layout: "week_view",
+            embed: "",
+          },
+          headers: {
+            referer: "https://example.com/schedule",
+          },
+        })
+      ).catch(noop);
+
+      expect(notFound).toHaveBeenCalled();
     });
   });
 

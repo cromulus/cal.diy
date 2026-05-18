@@ -5,6 +5,7 @@ import { BookingRepository } from "@calcom/features/bookings/repositories/Bookin
 import { getDefaultEvent } from "@calcom/features/eventtypes/lib/defaultEvents";
 import { getBrandingForEventType } from "@calcom/features/profile/lib/getBranding";
 import { shouldHideBrandingForEvent } from "@calcom/features/profile/lib/hideBranding";
+import { getEmbedAllowedDomainsFromUserMetadata } from "@calcom/lib/getEmbedAllowedDomainsFromUserMetadata";
 import { parseRecurringEvent } from "@calcom/lib/isRecurringEvent";
 import { markdownToSafeHTML } from "@calcom/lib/markdownToSafeHTML";
 import { maybeGetBookingUidFromSeat } from "@calcom/lib/server/maybeGetBookingUidFromSeat";
@@ -240,6 +241,11 @@ export async function getServerSideProps(context: GetServerSidePropsContext) {
       : previousBooking;
 
   const isPlatformBooking = eventType.users[0]?.isPlatformManaged || eventType.team?.createdByOAuthClientId;
+  const firstEventTypeUser = eventType.users[0];
+  let embedAllowedDomains: string[] = [];
+  if (firstEventTypeUser && "metadata" in firstEventTypeUser) {
+    embedAllowedDomains = getEmbedAllowedDomainsFromUserMetadata(firstEventTypeUser.metadata);
+  }
 
   return {
     props: {
@@ -267,6 +273,7 @@ export async function getServerSideProps(context: GetServerSidePropsContext) {
       isLoggedInUserHost,
       canViewHiddenData,
       internalNotePresets: internalNotes,
+      embedAllowedDomains,
     },
   };
 }

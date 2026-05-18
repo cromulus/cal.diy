@@ -6,6 +6,7 @@ import type { getPublicEvent } from "@calcom/features/eventtypes/lib/getPublicEv
 import { EventRepository } from "@calcom/features/eventtypes/repositories/EventRepository";
 import { shouldHideBrandingForUserEvent } from "@calcom/features/profile/lib/hideBranding";
 import { UserRepository } from "@calcom/features/users/repositories/UserRepository";
+import { getEmbedAllowedDomainsFromUserMetadata } from "@calcom/lib/getEmbedAllowedDomainsFromUserMetadata";
 import slugify from "@calcom/lib/slugify";
 import { prisma } from "@calcom/prisma";
 import { BookingStatus, RedirectType } from "@calcom/prisma/enums";
@@ -26,6 +27,7 @@ type Props = {
   isSEOIndexable: boolean | null;
   themeBasis: null | string;
   orgBannerUrl: null;
+  embedAllowedDomains?: string[];
 };
 
 async function processReschedule({
@@ -181,6 +183,7 @@ async function getDynamicGroupPageProps(context: GetServerSidePropsContext) {
     bookingUid: bookingUid ? `${bookingUid}` : null,
     rescheduleUid: null,
     orgBannerUrl: null,
+    embedAllowedDomains: users.flatMap((user) => getEmbedAllowedDomainsFromUserMetadata(user.metadata)),
   };
 
   if (rescheduleUid) {
@@ -277,6 +280,7 @@ async function getUserPageProps(context: GetServerSidePropsContext) {
     bookingUid: bookingUid ? `${bookingUid}` : null,
     rescheduleUid: null,
     orgBannerUrl: eventData?.owner?.profile?.organization?.bannerUrl ?? null,
+    embedAllowedDomains: getEmbedAllowedDomainsFromUserMetadata(user.metadata),
   };
   if (rescheduleUid) {
     const processRescheduleResult = await processReschedule({

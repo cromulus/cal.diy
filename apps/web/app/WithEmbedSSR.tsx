@@ -1,14 +1,24 @@
+import { isEmbedReferrerAllowed } from "@calcom/lib/embedAllowedDomains";
+import { WebAppURL } from "@calcom/lib/WebAppURL";
 import type { GetServerSideProps, GetServerSidePropsContext } from "next";
 import { notFound, redirect } from "next/navigation";
 
-import { WebAppURL } from "@calcom/lib/WebAppURL";
+type InternalEmbedProps = {
+  embedAllowedDomains?: string[];
+};
 
-export type EmbedProps = {
-  isEmbed?: boolean;
+const getRequestReferrer = (context: GetServerSidePropsContext) => {
+  const referrer = context.req.headers.referer ?? context.req.headers.referrer;
+  return Array.isArray(referrer) ? referrer[0] : referrer;
+};
+
+const stripInternalEmbedProps = <T extends Record<string, unknown>>(props: T & InternalEmbedProps) => {
+  const { embedAllowedDomains: _embedAllowedDomains, ...clientProps } = props;
+  return clientProps as T;
 };
 
 const withEmbedSsrAppDir =
-  <T extends Record<string, any>>(getServerSideProps: GetServerSideProps<T>) =>
+  <T extends Record<string, unknown> & EmbedProps>(getServerSideProps: GetServerSideProps<T>) =>
   async (context: GetServerSidePropsContext): Promise<T> => {
     const { embed, layout } = context.query;
     const ssrResponse = await getServerSideProps(context);
@@ -33,17 +43,31 @@ const withEmbedSsrAppDir =
       const newDestinationUrl = `${urlPrefix}${destinationUrlObj.pathname}/embed?${
         destinationQueryStr ? `${destinationQueryStr}&` : ""
       }layout=${layout}&embed=${embed}`;
-      redirect(newDestinationUrl);
+      return redirect(newDestinationUrl);
     }
 
     if ("notFound" in ssrResponse) {
-      notFound();
+      return notFound();
+    }
+
+    const props = (await Promise.resolve(ssrResponse.props)) as T & InternalEmbedProps;
+    if (
+      !isEmbedReferrerAllowed({
+        referrer: getRequestReferrer(context),
+        allowedDomains: props.embedAllowedDomains ?? [],
+      })
+    ) {
+      return notFound();
     }
 
     return {
-      ...ssrResponse.props,
+      ...stripInternalEmbedProps(props),
       isEmbed: true,
-    };
+    } as T;
   };
+
+export type EmbedProps = {
+  isEmbed?: boolean;
+};
 
 export default withEmbedSsrAppDir;

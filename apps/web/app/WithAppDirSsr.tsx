@@ -1,21 +1,28 @@
 import type { GetServerSideProps, GetServerSidePropsContext } from "next";
 import { notFound, redirect } from "next/navigation";
 
+type InternalEmbedProps = {
+  embedAllowedDomains?: string[];
+};
+
+const stripInternalEmbedProps = <T extends Record<string, unknown>>(props: T & InternalEmbedProps) => {
+  const { embedAllowedDomains: _embedAllowedDomains, ...clientProps } = props;
+  return clientProps as T;
+};
+
 export const withAppDirSsr =
-  <T extends Record<string, any>>(getServerSideProps: GetServerSideProps<T>) =>
+  <T extends Record<string, unknown>>(getServerSideProps: GetServerSideProps<T>) =>
   async (context: GetServerSidePropsContext) => {
     const ssrResponse = await getServerSideProps(context);
 
     if ("redirect" in ssrResponse) {
-      redirect(ssrResponse.redirect.destination);
+      return redirect(ssrResponse.redirect.destination);
     }
     if ("notFound" in ssrResponse) {
-      notFound();
+      return notFound();
     }
 
     const props = await Promise.resolve(ssrResponse.props);
 
-    return {
-      ...props,
-    };
+    return stripInternalEmbedProps(props);
   };

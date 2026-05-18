@@ -5,6 +5,7 @@ import { getBrandingForUser } from "@calcom/features/profile/lib/getBranding";
 import { UserRepository } from "@calcom/features/users/repositories/UserRepository";
 import { DEFAULT_DARK_BRAND_COLOR, DEFAULT_LIGHT_BRAND_COLOR } from "@calcom/lib/constants";
 import { getUserAvatarUrl } from "@calcom/lib/getAvatarUrl";
+import { getEmbedAllowedDomainsFromUserMetadata } from "@calcom/lib/getEmbedAllowedDomainsFromUserMetadata";
 import logger from "@calcom/lib/logger";
 import { markdownToSafeHTML } from "@calcom/lib/markdownToSafeHTML";
 import { safeStringify } from "@calcom/lib/safeStringify";
@@ -73,6 +74,7 @@ type UserPageProps = {
     | "schedulingType"
   >)[];
   isOrgSEOIndexable: boolean | undefined;
+  embedAllowedDomains?: string[];
 } & EmbedProps;
 
 export const getServerSideProps: GetServerSideProps<UserPageProps> = async (context) => {
@@ -207,6 +209,7 @@ export const getServerSideProps: GetServerSideProps<UserPageProps> = async (cont
       themeBasis: user.username,
       markdownStrippedBio,
       isOrgSEOIndexable: org?.organizationSettings?.allowSEOIndexing ?? false,
+      embedAllowedDomains: getEmbedAllowedDomainsFromUserMetadata(user.metadata),
     },
   };
 };

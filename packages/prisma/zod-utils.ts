@@ -389,6 +389,7 @@ export const userMetadata = z
       .string()
       .transform((data) => data.toLowerCase())
       .optional(),
+    embedAllowedDomains: z.array(z.string()).optional(),
     migratedToOrgFrom: z
       .object({
         username: z.string().or(z.null()).optional(),

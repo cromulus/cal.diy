@@ -148,6 +148,38 @@ type CalendarSettingsProps = {
   isChildrenManagedEventType: boolean;
 };
 
+type ConnectedCalendarsQueryData = NonNullable<EventAdvancedTabProps["calendarsQuery"]["data"]>;
+
+const getSelectedDestinationCalendarPrimaryEmail = ({
+  connectedCalendars,
+  destinationCalendar,
+  selectedDestinationCalendar,
+}: {
+  connectedCalendars: ConnectedCalendarsQueryData["connectedCalendars"];
+  destinationCalendar: ConnectedCalendarsQueryData["destinationCalendar"] | null;
+  selectedDestinationCalendar?: FormValues["destinationCalendar"] | null;
+}): string | null => {
+  if (!selectedDestinationCalendar?.externalId) return destinationCalendar?.primaryEmail ?? null;
+
+  const connectedCalendar = connectedCalendars.find((connectedCalendar) =>
+    connectedCalendar.calendars?.some(
+      (calendar) =>
+        calendar.externalId === selectedDestinationCalendar.externalId &&
+        calendar.integration === selectedDestinationCalendar.integration
+    )
+  );
+
+  if (connectedCalendar?.primary?.email) return connectedCalendar.primary.email;
+
+  const selectedPersistedDestinationCalendar =
+    destinationCalendar?.externalId === selectedDestinationCalendar.externalId &&
+    destinationCalendar.integration === selectedDestinationCalendar.integration;
+
+  if (selectedPersistedDestinationCalendar) return destinationCalendar.primaryEmail ?? null;
+
+  return null;
+};
+
 const destinationCalendarComponents = {
   DestinationCalendarSettings({
     showConnectedCalendarSettings,
@@ -168,6 +200,31 @@ const destinationCalendarComponents = {
     const [useEventTypeDestinationCalendarEmail, setUseEventTypeDestinationCalendarEmail] = useState(
       formMethods.getValues("useEventTypeDestinationCalendarEmail")
     );
+    const selectedDestinationCalendar = formMethods.watch("destinationCalendar");
+    const selectedDestinationCalendarPrimaryEmail = getSelectedDestinationCalendarPrimaryEmail({
+      connectedCalendars: calendarsQuery.data?.connectedCalendars ?? [],
+      destinationCalendar: calendarsQuery.data?.destinationCalendar ?? null,
+      selectedDestinationCalendar,
+    });
+    let calendarAccountOrganizerStatus = (
+      <Alert
+        severity="warning"
+        title={t("calendar_account_reconnect_required")}
+        message={t("calendar_account_reconnect_required_description")}
+      />
+    );
+    if (selectedDestinationCalendarPrimaryEmail) {
+      calendarAccountOrganizerStatus = (
+        <p className="flex flex-wrap items-center gap-2 text-sm text-subtle">
+          <Badge variant="success">{t("ready")}</Badge>
+          <span>
+            {t("calendar_account_ready_to_use_organizer_email", {
+              email: selectedDestinationCalendarPrimaryEmail,
+            })}
+          </span>
+        </p>
+      );
+    }
     const selectedSecondaryEmailId = formMethods.getValues("secondaryEmailId") || -1;
     return (
       <div className="stack-y-6 rounded-lg border border-subtle p-6">
@@ -241,11 +298,12 @@ const destinationCalendarComponents = {
                   formMethods.setValue("useEventTypeDestinationCalendarEmail", val, {
                     shouldDirty: true,
                   });
-                  if (val) {
-                    showToast(t("reconnect_calendar_to_use"), "warning");
+                  if (val && !selectedDestinationCalendarPrimaryEmail) {
+                    showToast(t("calendar_account_reconnect_required"), "warning");
                   }
                 }}
               />
+              <div className="mt-2 pl-11">{calendarAccountOrganizerStatus}</div>
             </div>
           )}
           {!showConnectedCalendarSettings && !isTeamEventType && (
