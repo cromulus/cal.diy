@@ -8,7 +8,7 @@ import { useLocale } from "@calcom/lib/hooks/useLocale";
 import type { RouterOutputs } from "@calcom/trpc/react";
 import { trpc } from "@calcom/trpc/react";
 import { Button } from "@calcom/ui/components/button";
-import { Label } from "@calcom/ui/components/form/inputs/Label";
+import { Label } from "@calcom/ui/components/form";
 import { showToast } from "@calcom/ui/components/toast";
 import { revalidateSettingsEmbedDomains } from "@calcom/web/app/cache/path/settings/my-account";
 import { XIcon } from "@coss/ui/icons";
