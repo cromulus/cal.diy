@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { WEBAPP_URL } from "./constants";
 import {
   isEmbedReferrerAllowed,
   normalizeEmbedAllowedDomain,
@@ -60,6 +61,15 @@ describe("embedAllowedDomains", () => {
           allowedDomains: ["cromie.org"],
         })
       ).toBe(false);
+    });
+
+    it("always allows same-app referrers so embed previews keep working", () => {
+      expect(
+        isEmbedReferrerAllowed({
+          referrer: `${WEBAPP_URL}/embed/preview.html`,
+          allowedDomains: ["cromie.org"],
+        })
+      ).toBe(true);
     });
 
     it("supports wildcard subdomains without matching the root domain", () => {

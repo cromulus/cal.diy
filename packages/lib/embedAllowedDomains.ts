@@ -1,11 +1,16 @@
+import { WEBAPP_URL } from "./constants";
+
 const DOMAIN_SEPARATOR_REGEX = /[\s,]+/;
 const URL_PROTOCOL_REGEX = /^[a-z][a-z0-9+.-]*:\/\//i;
 
-const normalizeHost = (value: string) => {
+const normalizeHost = (value: string): string | null => {
   const trimmedValue = value.trim().toLowerCase();
   if (!trimmedValue) return null;
 
-  const urlString = URL_PROTOCOL_REGEX.test(trimmedValue) ? trimmedValue : `https://${trimmedValue}`;
+  let urlString = trimmedValue;
+  if (!URL_PROTOCOL_REGEX.test(trimmedValue)) {
+    urlString = `https://${trimmedValue}`;
+  }
 
   try {
     const url = new URL(urlString);
@@ -18,9 +23,11 @@ const normalizeHost = (value: string) => {
   }
 };
 
-export const normalizeEmbedAllowedDomain = (value: string) => normalizeHost(value);
+const APP_HOST: string | null = normalizeHost(WEBAPP_URL);
 
-export const normalizeEmbedAllowedDomains = (values: string[]) => {
+const normalizeEmbedAllowedDomain = (value: string): string | null => normalizeHost(value);
+
+const normalizeEmbedAllowedDomains = (values: string[]): string[] => {
   const seenDomains = new Set<string>();
 
   return values.reduce<string[]>((domains, value) => {
@@ -33,10 +40,10 @@ export const normalizeEmbedAllowedDomains = (values: string[]) => {
   }, []);
 };
 
-export const parseEmbedAllowedDomainsInput = (value: string) =>
+const parseEmbedAllowedDomainsInput = (value: string): string[] =>
   normalizeEmbedAllowedDomains(value.split(DOMAIN_SEPARATOR_REGEX));
 
-const getUrlFromReferrer = (referrer: string | undefined) => {
+const getUrlFromReferrer = (referrer: string | undefined): URL | null => {
   if (!referrer) return null;
 
   try {
@@ -48,7 +55,7 @@ const getUrlFromReferrer = (referrer: string | undefined) => {
   }
 };
 
-const getUrlFromAllowedHost = (allowedHost: string) => {
+const getUrlFromAllowedHost = (allowedHost: string): URL | null => {
   try {
     return new URL(`https://${allowedHost}`);
   } catch {
@@ -56,7 +63,7 @@ const getUrlFromAllowedHost = (allowedHost: string) => {
   }
 };
 
-const isWildcardAllowedDomainMatch = (referrerUrl: URL, allowedDomain: string) => {
+const isWildcardAllowedDomainMatch = (referrerUrl: URL, allowedDomain: string): boolean => {
   const allowedUrl = getUrlFromAllowedHost(allowedDomain.slice(2));
   if (!allowedUrl) return false;
 
@@ -66,7 +73,7 @@ const isWildcardAllowedDomainMatch = (referrerUrl: URL, allowedDomain: string) =
   return true;
 };
 
-const isExactAllowedDomainMatch = (referrerUrl: URL, allowedDomain: string) => {
+const isExactAllowedDomainMatch = (referrerUrl: URL, allowedDomain: string): boolean => {
   const allowedUrl = getUrlFromAllowedHost(allowedDomain);
   if (!allowedUrl) return false;
 
@@ -75,22 +82,34 @@ const isExactAllowedDomainMatch = (referrerUrl: URL, allowedDomain: string) => {
   return referrerUrl.hostname === allowedUrl.hostname;
 };
 
-export const isEmbedReferrerAllowed = ({
+const isAllowedDomainMatch = (referrerUrl: URL, allowedDomain: string): boolean => {
+  if (allowedDomain.startsWith("*.")) {
+    return isWildcardAllowedDomainMatch(referrerUrl, allowedDomain);
+  }
+
+  return isExactAllowedDomainMatch(referrerUrl, allowedDomain);
+};
+
+const isEmbedReferrerAllowed = ({
   referrer,
   allowedDomains,
 }: {
   referrer: string | undefined;
   allowedDomains: string[];
-}) => {
+}): boolean => {
   const normalizedAllowedDomains = normalizeEmbedAllowedDomains(allowedDomains);
   if (!normalizedAllowedDomains.length) return true;
 
   const referrerUrl = getUrlFromReferrer(referrer);
   if (!referrerUrl) return false;
+  if (APP_HOST && referrerUrl.host === APP_HOST) return true;
 
-  return normalizedAllowedDomains.some((allowedDomain) =>
-    allowedDomain.startsWith("*.")
-      ? isWildcardAllowedDomainMatch(referrerUrl, allowedDomain)
-      : isExactAllowedDomainMatch(referrerUrl, allowedDomain)
-  );
+  return normalizedAllowedDomains.some((allowedDomain) => isAllowedDomainMatch(referrerUrl, allowedDomain));
+};
+
+export {
+  isEmbedReferrerAllowed,
+  normalizeEmbedAllowedDomain,
+  normalizeEmbedAllowedDomains,
+  parseEmbedAllowedDomainsInput,
 };
