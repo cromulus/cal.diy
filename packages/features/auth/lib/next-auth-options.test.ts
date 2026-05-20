@@ -65,6 +65,7 @@ vi.mock("@calcom/lib/constants", async (importOriginal) => {
     IS_TEAM_BILLING_ENABLED: false,
     ENABLE_PROFILE_SWITCHER: false,
     WEBAPP_URL: "http://localhost:3000",
+    WEBSITE_URL: "http://localhost:3000",
   };
 });
 
@@ -116,6 +117,7 @@ const mockPrismaSecondaryEmailFindFirst = vi.fn();
 const mockPrismaTeamFindFirst = vi.fn();
 const mockPrismaSelectedCalendarCreate = vi.fn();
 const mockLinkAccount = vi.fn();
+const mockJwtVerify = vi.fn();
 
 vi.mock("@calcom/features/credentials/repositories/CredentialRepository", () => ({
   CredentialRepository: {
@@ -171,6 +173,10 @@ vi.mock("googleapis-common", () => ({
   OAuth2Client: vi.fn(),
 }));
 
+vi.mock("jose", () => ({
+  jwtVerify: (...args: unknown[]) => mockJwtVerify(...args),
+}));
+
 vi.mock("@googleapis/calendar", () => ({
   calendar_v3: {
     Calendar: vi.fn(),
@@ -205,6 +211,7 @@ describe("CredentialsProvider authorize", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     mockFindByEmailAndIncludeProfilesAndPassword.mockReset();
+    mockJwtVerify.mockReset();
 
     const verifyPasswordModule = await import("./verifyPassword");
     verifyPassword = verifyPasswordModule.verifyPassword;
@@ -331,6 +338,70 @@ describe("CredentialsProvider authorize", () => {
           totpCode: "123456",
         } as any)
       ).rejects.toThrow(ErrorCode.IncorrectEmailPassword);
+    });
+
+    it("should allow identity provider login with a valid two-factor login token and TOTP code", async () => {
+      const originalKey = process.env.CALENDSO_ENCRYPTION_KEY;
+      process.env.CALENDSO_ENCRYPTION_KEY = "test";
+
+      try {
+        const { symmetricDecrypt } = await import("@calcom/lib/crypto");
+        vi.mocked(symmetricDecrypt).mockReturnValue("a".repeat(32));
+
+        const { totpAuthenticatorCheck } = await import("@calcom/lib/totp");
+        vi.mocked(totpAuthenticatorCheck).mockReturnValue(true);
+
+        mockJwtVerify.mockResolvedValue({ payload: { email: "test@example.com" } });
+
+        const mockUser = createMockUser({
+          password: null,
+          identityProvider: IdentityProvider.GOOGLE,
+          twoFactorEnabled: true,
+          twoFactorSecret: "encrypted_secret",
+        });
+        mockFindByEmailAndIncludeProfilesAndPassword.mockResolvedValue(mockUser);
+
+        const result = await authorizeCredentials({
+          email: "test@example.com",
+          totpCode: "123456",
+          totpToken: "signed-token",
+        });
+
+        expect(result?.email).toBe("test@example.com");
+        expect(verifyPassword).not.toHaveBeenCalled();
+        expect(totpAuthenticatorCheck).toHaveBeenCalledWith("123456", "a".repeat(32));
+      } finally {
+        process.env.CALENDSO_ENCRYPTION_KEY = originalKey;
+      }
+    });
+
+    it("should reject identity provider TOTP login when the two-factor login token is invalid", async () => {
+      const originalKey = process.env.CALENDSO_ENCRYPTION_KEY;
+      process.env.CALENDSO_ENCRYPTION_KEY = "test";
+
+      try {
+        mockJwtVerify.mockRejectedValue(new Error("Invalid token"));
+
+        const mockUser = createMockUser({
+          password: null,
+          identityProvider: IdentityProvider.GOOGLE,
+          twoFactorEnabled: true,
+          twoFactorSecret: "encrypted_secret",
+        });
+        mockFindByEmailAndIncludeProfilesAndPassword.mockResolvedValue(mockUser);
+
+        await expect(
+          authorizeCredentials({
+            email: "test@example.com",
+            totpCode: "123456",
+            totpToken: "invalid-token",
+          })
+        ).rejects.toThrow(ErrorCode.IncorrectEmailPassword);
+
+        expect(verifyPassword).not.toHaveBeenCalled();
+      } finally {
+        process.env.CALENDSO_ENCRYPTION_KEY = originalKey;
+      }
     });
   });
 

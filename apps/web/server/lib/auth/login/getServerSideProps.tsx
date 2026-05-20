@@ -24,11 +24,13 @@ export async function getServerSideProps(context: GetServerSidePropsContext) {
   };
 
   let totpEmail = null;
+  let totpToken = null;
   if (context.query.totp) {
     try {
       const decryptedJwt = await verifyJwt(context.query.totp as string);
       if (decryptedJwt.payload) {
         totpEmail = decryptedJwt.payload.email as string;
+        totpToken = context.query.totp as string;
       } else {
         return {
           redirect: {
@@ -93,6 +95,7 @@ export async function getServerSideProps(context: GetServerSidePropsContext) {
       oidcProviderName: OIDC_PROVIDER_NAME,
       isSignupDisabled: process.env.NEXT_PUBLIC_DISABLE_SIGNUP === "true",
       totpEmail,
+      totpToken,
     },
   };
 }

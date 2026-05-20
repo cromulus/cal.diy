@@ -29,6 +29,7 @@ import {
   IS_TEAM_BILLING_ENABLED,
   MICROSOFT_CALENDAR_SCOPES,
   WEBAPP_URL,
+  WEBSITE_URL,
 } from "@calcom/lib/constants";
 import { symmetricDecrypt, symmetricEncrypt } from "@calcom/lib/crypto";
 import { defaultCookies } from "@calcom/lib/default-cookies";
@@ -47,6 +48,7 @@ import type { UserProfile } from "@calcom/types/UserProfile";
 import { calendar_v3 } from "@googleapis/calendar";
 import { waitUntil } from "@vercel/functions";
 import { OAuth2Client } from "googleapis-common";
+import { jwtVerify } from "jose";
 import type { Account, AuthOptions, Profile, Session, User } from "next-auth";
 import type { JWT } from "next-auth/jwt";
 import { encode } from "next-auth/jwt";
@@ -69,6 +71,10 @@ interface ExtendedOAuthProfile extends Profile {
   email_verified?: boolean; // Google/OIDC standard
   xms_edov?: boolean | string | number; // Azure AD specific
 }
+
+type CredentialsPayload = Partial<
+  Record<"email" | "password" | "totpCode" | "backupCode" | "totpToken", string>
+>;
 
 // This adapts our internal user model to what NextAuth expects
 // NextAuth core requires id to be a string, so we handle that here
@@ -115,6 +121,23 @@ const getDomainFromEmail = (email: string): string => email.split("@")[1];
 const loginWithTotp = async (email: string) =>
   `/auth/login?totp=${encodeURIComponent(await (await import("./signJwt")).default({ email }))}`;
 
+const verifyTotpLoginToken = async (token: string | undefined, email: string) => {
+  if (!token || !process.env.CALENDSO_ENCRYPTION_KEY) return false;
+
+  try {
+    const secret = new TextEncoder().encode(process.env.CALENDSO_ENCRYPTION_KEY);
+    const verifiedJwt = await jwtVerify(token, secret, {
+      issuer: WEBSITE_URL,
+      audience: `${WEBSITE_URL}/auth/login`,
+      algorithms: ["HS256"],
+    });
+    return String(verifiedJwt.payload.email || "").toLowerCase() === email.toLowerCase();
+  } catch (error) {
+    log.warn("Invalid two-factor login token", safeStringify(error));
+    return false;
+  }
+};
+
 type UserTeams = {
   teams: (Membership & {
     team: Pick<Team, "metadata">;
@@ -155,10 +178,19 @@ const checkIfUserShouldBelongToOrg = async (idP: IdentityProvider, email: string
  * Extracted for testability
  */
 export async function authorizeCredentials(
-  credentials: Record<"email" | "password" | "totpCode" | "backupCode", string> | undefined
+  credentials: CredentialsPayload | undefined
 ): Promise<User | null> {
-  log.debug("CredentialsProvider:credentials:authorize", safeStringify({ credentials }));
-  if (!credentials) {
+  log.debug(
+    "CredentialsProvider:credentials:authorize",
+    safeStringify({
+      email: credentials?.email,
+      hasPassword: !!credentials?.password,
+      hasTotpCode: !!credentials?.totpCode,
+      hasBackupCode: !!credentials?.backupCode,
+      hasTotpToken: !!credentials?.totpToken,
+    })
+  );
+  if (!credentials?.email) {
     console.error(`For some reason credentials are missing`);
     throw new Error(ErrorCode.InternalServerError);
   }
@@ -181,15 +213,20 @@ export async function authorizeCredentials(
     identifier: hashEmail(user.email),
   });
 
-  // Users without a password must use their identity provider (Google/SAML) to login
-  if (!user.password?.hash) {
-    throw new Error(ErrorCode.IncorrectEmailPassword);
-  }
+  const canUseTotpLoginToken =
+    user.twoFactorEnabled && (await verifyTotpLoginToken(credentials.totpToken, user.email));
 
-  // Always verify password for users who have one
-  const isCorrectPassword = await verifyPassword(credentials.password, user.password.hash);
-  if (!isCorrectPassword) {
-    throw new Error(ErrorCode.IncorrectEmailPassword);
+  if (!canUseTotpLoginToken) {
+    // Users without a password must use their identity provider (Google/SAML) to login
+    if (!user.password?.hash || !credentials.password) {
+      throw new Error(ErrorCode.IncorrectEmailPassword);
+    }
+
+    // Always verify password for users who have one
+    const isCorrectPassword = await verifyPassword(credentials.password, user.password.hash);
+    if (!isCorrectPassword) {
+      throw new Error(ErrorCode.IncorrectEmailPassword);
+    }
   }
 
   if (user.twoFactorEnabled && credentials.backupCode) {
@@ -263,7 +300,7 @@ export async function authorizeCredentials(
     }
 
     // User's password is valid and two-factor authentication is enabled
-    if (isPasswordValid(credentials.password, false, true) && user.twoFactorEnabled) return role;
+    if (isPasswordValid(credentials.password || "", false, true) && user.twoFactorEnabled) return role;
     // Code is running in a development environment
     if (isENVDev) return role;
     // By this point it is an ADMIN without valid security conditions
@@ -274,7 +311,7 @@ export async function authorizeCredentials(
   const baseUser = AdapterUserPresenter.fromCalUser(user, role, hasActiveTeams);
 
   if (role === "INACTIVE_ADMIN") {
-    const passwordValid = isPasswordValid(credentials.password, false, true);
+    const passwordValid = isPasswordValid(credentials.password || "", false, true);
     const has2FA = user.twoFactorEnabled;
 
     let reason: "both" | "password" | "2fa";
@@ -302,6 +339,7 @@ export const CalComCredentialsProvider = CredentialsProvider({
     password: { label: "Password", type: "password", placeholder: "Your super secure password" },
     totpCode: { label: "Two-factor Code", type: "input", placeholder: "Code from authenticator app" },
     backupCode: { label: "Backup Code", type: "input", placeholder: "Two-factor backup code" },
+    totpToken: { label: "Two-factor Login Token", type: "hidden" },
   },
   authorize: authorizeCredentials,
 });

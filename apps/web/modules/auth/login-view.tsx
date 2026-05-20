@@ -32,6 +32,7 @@ interface LoginValues {
   email: string;
   password: string;
   totpCode: string;
+  totpToken: string;
   backupCode: string;
   csrfToken: string;
 }
@@ -105,10 +106,12 @@ export default function Login({
   isOutlookLoginEnabled,
   isSignupDisabled,
   totpEmail,
+  totpToken,
 }: PageProps) {
   const searchParams = useCompatSearchParams();
   const { t } = useLocale();
   const router = useRouter();
+  const defaultEmail = totpEmail || (searchParams?.get("email") as string) || "";
   const formSchema = z
     .object({
       email: z
@@ -119,7 +122,12 @@ export default function Login({
     })
     // Passthrough other fields like totpCode
     .passthrough();
-  const methods = useForm<LoginValues>({ resolver: zodResolver(formSchema) });
+  const methods = useForm<LoginValues>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      email: defaultEmail,
+    },
+  });
   const { register, formState } = methods;
   const [twoFactorRequired, setTwoFactorRequired] = useState(!!totpEmail || false);
   const [twoFactorLostAccess, setTwoFactorLostAccess] = useState(false);
@@ -258,19 +266,19 @@ export default function Login({
 
             <form onSubmit={methods.handleSubmit(onSubmit)} noValidate data-testid="login-form">
               <input defaultValue={csrfToken || undefined} type="hidden" hidden {...register("csrfToken")} />
+              {twoFactorRequired && totpEmail && (
+                <input defaultValue={totpEmail} type="hidden" hidden {...register("email")} />
+              )}
+              {twoFactorRequired && totpToken && (
+                <input defaultValue={totpToken} type="hidden" hidden {...register("totpToken")} />
+              )}
 
               {!twoFactorRequired && (
                 <div className="space-y-6">
                   {/* Email Field */}
                   <Field>
                     <FieldLabel>{t("email")}</FieldLabel>
-                    <Input
-                      id="email"
-                      type="email"
-                      defaultValue={totpEmail || (searchParams?.get("email") as string)}
-                      autoComplete="email"
-                      {...register("email")}
-                    />
+                    <Input id="email" type="email" autoComplete="email" {...register("email")} />
                     {formState.errors.email && (
                       <p data-testid="field-error" className="text-destructive-foreground text-xs">
                         {formState.errors.email.message}
