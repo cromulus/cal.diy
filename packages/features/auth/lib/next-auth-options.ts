@@ -4,6 +4,12 @@ import { updateProfilePhotoMicrosoft } from "@calcom/app-store/_utils/oauth/upda
 import { createGoogleCalendarServiceWithGoogleType } from "@calcom/app-store/googlecalendar/lib/CalendarService";
 import { getIdentityProvider } from "@calcom/features/auth/lib/identityProviders";
 import {
+  GenericOidcProvider,
+  IS_OIDC_LOGIN_ENABLED,
+  OIDC_PROVIDER_ID,
+  OIDC_TRUST_EMAIL,
+} from "@calcom/features/auth/lib/oidc";
+import {
   OUTLOOK_CLIENT_ID,
   OUTLOOK_CLIENT_SECRET,
   OUTLOOK_LOGIN_ENABLED,
@@ -354,6 +360,10 @@ if (OUTLOOK_LOGIN_ENABLED && OUTLOOK_CLIENT_ID && OUTLOOK_CLIENT_SECRET) {
       },
     })
   );
+}
+
+if (IS_OIDC_LOGIN_ENABLED) {
+  providers.push(GenericOidcProvider());
 }
 
 providers.push(
@@ -841,7 +851,11 @@ export const getOptions = ({
           return "/auth/error?error=unknown-provider";
         }
         // Use optional chaining for safety, especially with AdapterUser potentially having different structure initially.
-        const isEmailVerified = user.emailVerified || (profile as ExtendedOAuthProfile)?.email_verified;
+        const isGenericOidcProvider = account?.provider === OIDC_PROVIDER_ID;
+        const isEmailVerified =
+          user.emailVerified ||
+          (profile as ExtendedOAuthProfile)?.email_verified ||
+          (isGenericOidcProvider && OIDC_TRUST_EMAIL);
 
         // For Azure AD, check xms_edov (Email Domain Owner Verified) claim
         // xms_edov returns inconsistent types: boolean for work/school, string "1" for personal accounts

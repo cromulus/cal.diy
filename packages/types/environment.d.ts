@@ -6,6 +6,12 @@ declare namespace NodeJS {
     readonly GOOGLE_API_CREDENTIALS: string | undefined;
     /** Google Calendar API key for fetching public holiday calendars */
     readonly GOOGLE_CALENDAR_API_KEY: string | undefined;
+    readonly OIDC_LOGIN_ENABLED: string | undefined;
+    readonly OIDC_PROVIDER_NAME: string | undefined;
+    readonly OIDC_ISSUER: string | undefined;
+    readonly OIDC_CLIENT_ID: string | undefined;
+    readonly OIDC_CLIENT_SECRET: string | undefined;
+    readonly OIDC_TRUST_EMAIL: string | undefined;
     /** @deprecated use `NEXT_PUBLIC_WEBAPP_URL` */
     readonly BASE_URL: string | undefined;
     /** @deprecated use `NEXT_PUBLIC_WEBAPP_URL` */

@@ -20,7 +20,7 @@ import { Separator } from "@coss/ui/components/separator";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { inferSSRProps } from "@lib/types/inferSSRProps";
 import type { getServerSideProps } from "@server/lib/auth/login/getServerSideProps";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, KeyRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
@@ -36,13 +36,9 @@ interface LoginValues {
   csrfToken: string;
 }
 
-const MicrosoftIcon = () => (
-  <img className="size-4" src="/microsoft-logo.svg" alt="" />
-);
+const MicrosoftIcon = () => <img className="size-4" src="/microsoft-logo.svg" alt="" />;
 
-const GoogleIcon = () => (
-  <img className="size-4" src="/google-icon-colored.svg" alt="" />
-);
+const GoogleIcon = () => <img className="size-4" src="/google-icon-colored.svg" alt="" />;
 
 function BackgroundGrid() {
   const rows = 9;
@@ -104,7 +100,10 @@ export type PageProps = inferSSRProps<typeof getServerSideProps>;
 export default function Login({
   csrfToken,
   isGoogleLoginEnabled,
+  isOidcLoginEnabled,
+  oidcProviderName,
   isOutlookLoginEnabled,
+  isSignupDisabled,
   totpEmail,
 }: PageProps) {
   const searchParams = useCompatSearchParams();
@@ -170,9 +169,8 @@ export default function Login({
     else setErrorMessage(errorMessages[res.error] || t("something_went_wrong"));
   };
 
-  const showSocialLogin = isGoogleLoginEnabled || isOutlookLoginEnabled;
-  const showSignupLink =
-    process.env.NEXT_PUBLIC_DISABLE_SIGNUP !== "true" && searchParams?.get("register") !== "false";
+  const showSocialLogin = isGoogleLoginEnabled || isOutlookLoginEnabled || isOidcLoginEnabled;
+  const showSignupLink = !isSignupDisabled && searchParams?.get("register") !== "false";
 
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-default/80 px-4 py-10">
@@ -228,6 +226,23 @@ export default function Login({
                       <MicrosoftIcon />
                       <span>{t("signin_with_microsoft")}</span>
                       {lastUsed === "microsoft" && <LastUsed />}
+                    </Button>
+                  )}
+                  {isOidcLoginEnabled && (
+                    <Button
+                      variant="outline"
+                      className="w-full py-1"
+                      data-testid="oidc"
+                      onClick={async (e) => {
+                        e.preventDefault();
+                        setLastUsed("oidc");
+                        await signIn("oidc", {
+                          callbackUrl,
+                        });
+                      }}>
+                      <KeyRound className="size-4" />
+                      <span>{t("signin_with_provider", { provider: oidcProviderName })}</span>
+                      {lastUsed === "oidc" && <LastUsed />}
                     </Button>
                   )}
                 </div>

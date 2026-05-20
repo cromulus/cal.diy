@@ -7,6 +7,7 @@ import { IdentityProvider } from "@calcom/prisma/enums";
 export const NEXTAUTH_TO_IDENTITY_PROVIDER: Record<string, IdentityProvider> = {
   "azure-ad": IdentityProvider.AZUREAD,
   google: IdentityProvider.GOOGLE,
+  oidc: IdentityProvider.SAML,
   saml: IdentityProvider.SAML,
   "saml-idp": IdentityProvider.SAML,
   cal: IdentityProvider.CAL,
