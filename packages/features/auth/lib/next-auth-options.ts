@@ -1118,6 +1118,76 @@ export const getOptions = ({
           return `/auth/error?error=wrong-provider&provider=${existingUserWithEmail.identityProvider}`;
         }
 
+        if (isGenericOidcProvider) {
+          const existingVerifiedSecondaryEmail = await prisma.secondaryEmail.findFirst({
+            where: {
+              email: {
+                equals: user.email,
+                mode: "insensitive",
+              },
+              emailVerified: {
+                not: null,
+              },
+            },
+            select: {
+              user: {
+                select: {
+                  id: true,
+                  email: true,
+                  twoFactorEnabled: true,
+                  accounts: {
+                    where: {
+                      provider: account.provider,
+                      providerAccountId: account.providerAccountId,
+                    },
+                    select: {
+                      id: true,
+                    },
+                  },
+                },
+              },
+            },
+          });
+          const existingUserWithVerifiedSecondaryEmail = existingVerifiedSecondaryEmail?.user;
+
+          if (existingUserWithVerifiedSecondaryEmail) {
+            if (existingUserWithVerifiedSecondaryEmail.accounts.length === 0) {
+              try {
+                const linkAccountWithUserData = AdapterAccountPresenter.fromCalAccount(
+                  account,
+                  existingUserWithVerifiedSecondaryEmail.id,
+                  user.email
+                );
+                await calcomAdapter.linkAccount(linkAccountWithUserData);
+              } catch (error) {
+                if (error instanceof Error) {
+                  log.error(
+                    "Error while linking OIDC account by verified secondary email",
+                    safeStringify(error)
+                  );
+                }
+                return `/auth/error?error=user-creation-error`;
+              }
+            }
+
+            await prisma.user.update({
+              where: {
+                id: existingUserWithVerifiedSecondaryEmail.id,
+              },
+              data: {
+                identityProvider: idP,
+                identityProviderId: account.providerAccountId,
+              },
+            });
+
+            if (existingUserWithVerifiedSecondaryEmail.twoFactorEnabled) {
+              return loginWithTotp(existingUserWithVerifiedSecondaryEmail.email);
+            } else {
+              return true;
+            }
+          }
+        }
+
         // Associate with organization if enabled by flag and idP is Google or Azure AD
         const { orgUsername, orgId } = await checkIfUserShouldBelongToOrg(idP, user.email);
 

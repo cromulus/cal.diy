@@ -1,3 +1,4 @@
+import process from "node:process";
 import { IdentityProvider, UserPermissionRole } from "@calcom/prisma/enums";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ErrorCode } from "./ErrorCode";
@@ -111,6 +112,7 @@ const mockWaitUntil = vi.fn();
 const mockPrismaUserFindFirst = vi.fn();
 const mockPrismaUserCreate = vi.fn();
 const mockPrismaUserUpdate = vi.fn();
+const mockPrismaSecondaryEmailFindFirst = vi.fn();
 const mockPrismaTeamFindFirst = vi.fn();
 const mockPrismaSelectedCalendarCreate = vi.fn();
 const mockLinkAccount = vi.fn();
@@ -465,6 +467,7 @@ describe("Azure AD signIn callback", () => {
       const map: Record<string, string> = {
         "azure-ad": "AZUREAD",
         google: "GOOGLE",
+        oidc: "SAML",
         saml: "SAML",
         "saml-idp": "SAML",
         cal: "CAL",
@@ -481,6 +484,9 @@ describe("Azure AD signIn callback", () => {
       create: mockPrismaUserCreate,
       update: mockPrismaUserUpdate,
     };
+    prismaDefault.secondaryEmail = {
+      findFirst: mockPrismaSecondaryEmailFindFirst,
+    };
     prismaDefault.team = {
       findFirst: mockPrismaTeamFindFirst,
     };
@@ -491,6 +497,7 @@ describe("Azure AD signIn callback", () => {
     mockPrismaUserFindFirst.mockResolvedValue(null);
     mockPrismaUserCreate.mockResolvedValue({ id: 100, email: "new@example.com", twoFactorEnabled: false });
     mockPrismaUserUpdate.mockResolvedValue({});
+    mockPrismaSecondaryEmailFindFirst.mockResolvedValue(null);
     mockPrismaTeamFindFirst.mockResolvedValue(null);
     mockUpdateProfilePhotoMicrosoft.mockResolvedValue(undefined);
 
@@ -861,6 +868,65 @@ describe("Azure AD signIn callback", () => {
       expect(result).toBe("/auth/error?error=unverified-email");
     });
   });
+
+  describe("OIDC verified secondary email linking", () => {
+    it("links OIDC login to the owner of a verified secondary email before creating a new user", async () => {
+      mockPrismaUserFindFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
+      mockPrismaSecondaryEmailFindFirst.mockResolvedValueOnce({
+        user: {
+          id: 75,
+          email: "primary@example.com",
+          twoFactorEnabled: false,
+          accounts: [],
+        },
+      });
+
+      const result = await signInCallback({
+        user: {
+          id: "oidc-sub-123",
+          email: "secondary@example.com",
+          name: "Secondary User",
+          emailVerified: null,
+        } as Parameters<typeof signInCallback>[0]["user"],
+        account: {
+          provider: "oidc",
+          providerAccountId: "oidc-sub-123",
+          type: "oauth",
+        } as Parameters<typeof signInCallback>[0]["account"],
+        profile: { email_verified: true } as Parameters<typeof signInCallback>[0]["profile"],
+        credentials: undefined,
+        email: undefined,
+      });
+
+      expect(mockPrismaSecondaryEmailFindFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            email: {
+              equals: "secondary@example.com",
+              mode: "insensitive",
+            },
+            emailVerified: {
+              not: null,
+            },
+          }),
+        })
+      );
+      expect(mockPrismaUserUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 75 },
+          data: expect.objectContaining({
+            identityProvider: "SAML",
+            identityProviderId: "oidc-sub-123",
+          }),
+        })
+      );
+      expect(mockPrismaUserCreate).not.toHaveBeenCalled();
+      expect(result).toBe(true);
+    });
+  });
 });
 
 describe("Azure AD JWT callback", () => {
@@ -875,6 +941,7 @@ describe("Azure AD JWT callback", () => {
       const map: Record<string, string> = {
         "azure-ad": "AZUREAD",
         google: "GOOGLE",
+        oidc: "SAML",
         saml: "SAML",
         "saml-idp": "SAML",
         cal: "CAL",

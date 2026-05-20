@@ -46,6 +46,7 @@ export const GenericOidcProvider = (): OAuthConfig<GenericOidcProfile> => ({
   authorization: { params: { scope: "openid profile email" } },
   checks: ["pkce", "state"],
   idToken: true,
+  allowDangerousEmailAccountLinking: true,
   // The provider profile id is the external OIDC subject. Cal's augmented User id is numeric only
   // after the adapter resolves or creates the local user.
   profile: oidcProfile,
