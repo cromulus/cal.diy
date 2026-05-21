@@ -1,17 +1,15 @@
-import { useMemo } from "react";
-
 import { getPaymentAppData } from "@calcom/app-store/_utils/payments/getPaymentAppData";
 import { eventTypeMetaDataSchemaWithTypedApps } from "@calcom/app-store/zod-utils";
 import { Price } from "@calcom/features/bookings/components/event-meta/Price";
-import { PriceIcon } from "@calcom/web/modules/bookings/components/event-meta/PriceIcon";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
 import { parseRecurringEvent } from "@calcom/lib/isRecurringEvent";
-import { markdownToSafeHTML } from "@calcom/lib/markdownToSafeHTML";
 import type { baseEventTypeSelect } from "@calcom/prisma";
-import type { Prisma, EventType } from "@calcom/prisma/client";
+import type { EventType, Prisma } from "@calcom/prisma/client";
 import { SchedulingType } from "@calcom/prisma/enums";
 import classNames from "@calcom/ui/classNames";
 import { Badge } from "@calcom/ui/components/badge";
+import { PriceIcon } from "@calcom/web/modules/bookings/components/event-meta/PriceIcon";
+import { useMemo } from "react";
 
 export type EventTypeDescriptionProps = {
   eventType: Pick<
@@ -32,9 +30,8 @@ export const EventTypeDescription = ({
   eventType,
   className,
   shortenDescription,
-  isPublic,
 }: EventTypeDescriptionProps) => {
-  const { t, i18n } = useLocale();
+  const { t } = useLocale();
 
   const recurringEvent = useMemo(
     () => parseRecurringEvent(eventType.recurringEvent),
@@ -58,9 +55,9 @@ export const EventTypeDescription = ({
               shortenDescription ? "line-clamp-4 [&>*:not(:first-child)]:hidden" : ""
             )}
             // eslint-disable-next-line react/no-danger
-            // biome-ignore lint/security/noDangerouslySetInnerHtml: Content is sanitized via markdownToSafeHTML
+            // biome-ignore lint/security/noDangerouslySetInnerHtml: Content is sanitized before it reaches this component
             dangerouslySetInnerHTML={{
-              __html: markdownToSafeHTML(eventType.descriptionAsSafeHTML || ""),
+              __html: eventType.descriptionAsSafeHTML || "",
             }}
           />
         )}
@@ -122,7 +119,7 @@ export const EventTypeDescription = ({
             </li>
           )}
           {/* TODO: Maybe add a tool tip to this? */}
-          {eventType.requiresConfirmation || (recurringEvent?.count) ? (
+          {eventType.requiresConfirmation || recurringEvent?.count ? (
             <li className="block xl:hidden">
               <Badge variant="gray" startIcon="plus">
                 <p>{[eventType.requiresConfirmation, recurringEvent?.count].filter(Boolean).length}</p>

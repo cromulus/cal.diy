@@ -6,8 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { Mock } from "vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // We'll test the wrapped proxy as it would be used in production
-import proxy from "./proxy";
-import { config } from "./proxy";
+import proxy, { config } from "./proxy";
 
 // Mock dependencies at module level
 vi.mock("@vercel/edge-config", () => ({
@@ -328,6 +327,17 @@ describe("Middleware Integration Tests", () => {
       expect(cspHeader).toBeTruthy();
       expect(cspHeader).toContain("default-src");
       expect(cspHeader).toContain("script-src");
+    });
+
+    it("should allow app router and trpc requests to the configured web app origin", async () => {
+      const req = createTestRequest({
+        url: `${WEBAPP_URL}/auth/login`,
+      });
+
+      const res = await callProxy(req);
+      const cspHeader = getHeader(res, "content-security-policy");
+
+      expect(cspHeader).toContain(`connect-src 'self' ${WEBAPP_URL}`);
     });
 
     it("should not add CSP headers to non-login pages", async () => {

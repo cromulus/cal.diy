@@ -1,12 +1,11 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
-
 import dayjs from "@calcom/dayjs";
 import { useFlagMap } from "@calcom/features/flags/context/provider";
 import type { User } from "@calcom/prisma/client";
 import useMeQuery from "@calcom/trpc/react/hooks/useMeQuery";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef } from "react";
 
 const shouldShowOnboarding = (
   user: Pick<User, "createdDate" | "completedOnboarding"> & {
@@ -32,6 +31,7 @@ export const ONBOARDING_NEXT_REDIRECT = {
 export function useRedirectToOnboardingIfNeeded() {
   const router = useRouter();
   const pathname = usePathname();
+  const lastReplaceTargetRef = useRef<string | null>(null);
   const { data: user, isLoading } = useMeQuery();
   const flags = useFlagMap();
 
@@ -47,6 +47,10 @@ export function useRedirectToOnboardingIfNeeded() {
   useEffect(() => {
     if (canRedirect) {
       const gettingStartedPath = flags["onboarding-v3"] ? "/onboarding/getting-started" : "/getting-started";
+      if (pathname === gettingStartedPath || lastReplaceTargetRef.current === gettingStartedPath) {
+        return;
+      }
+      lastReplaceTargetRef.current = gettingStartedPath;
       router.replace(gettingStartedPath);
     }
   }, [canRedirect, router, flags, pathname]);

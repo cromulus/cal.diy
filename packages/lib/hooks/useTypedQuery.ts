@@ -1,9 +1,8 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useMemo, useEffect } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { z } from "zod";
-
 import { useRouterQuery } from "./useRouterQuery";
 
 type OptionalKeys<T> = {
@@ -40,8 +39,10 @@ export function useTypedQuery<T extends z.AnyZodObject>(schema: T) {
   type ArrayOutput = FilteredKeys<FullOutput, Array<unknown>>;
   type ArrayOutputKeys = keyof ArrayOutput;
   const router = useRouter();
+  const searchParams = useSearchParams();
   const unparsedQuery = useRouterQuery();
   const pathname = usePathname();
+  const lastReplaceTargetRef = useRef<string | null>(null);
   const parsedQuerySchema = schema.safeParse(unparsedQuery);
   let parsedQuery: Output = useMemo(() => {
     return {} as Output;
@@ -49,14 +50,25 @@ export function useTypedQuery<T extends z.AnyZodObject>(schema: T) {
 
   useEffect(() => {
     if (parsedQuerySchema.success && parsedQuerySchema.data) {
+      const search = new URLSearchParams(searchParams?.toString());
+      let hasMissingDefault = false;
       Object.entries(parsedQuerySchema.data).forEach(([key, value]) => {
         if (key in unparsedQuery || !value) return;
-        const search = new URLSearchParams(parsedQuery);
         search.set(String(key), String(value));
-        router.replace(`${pathname}?${search.toString()}`);
+        hasMissingDefault = true;
       });
+      if (!hasMissingDefault) return;
+      const target = `${pathname}?${search.toString()}`;
+      const currentSearch = searchParams?.toString();
+      let current = pathname;
+      if (currentSearch) {
+        current = `${current}?${currentSearch}`;
+      }
+      if (target === current || lastReplaceTargetRef.current === target) return;
+      lastReplaceTargetRef.current = target;
+      router.replace(target);
     }
-  }, [parsedQuerySchema, schema, router, pathname, unparsedQuery, parsedQuery]);
+  }, [parsedQuerySchema, router, pathname, unparsedQuery, searchParams]);
 
   if (parsedQuerySchema.success) parsedQuery = parsedQuerySchema.data;
   else if (!parsedQuerySchema.success) console.error(parsedQuerySchema.error);
