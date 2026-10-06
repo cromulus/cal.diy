@@ -117,7 +117,7 @@ const generateIcsString = ({
     ...{ recurrenceRule },
     attendees: [...attendeeEntries, ...(teamMemberEntries ?? [])],
     location: location ?? undefined,
-    method: "REQUEST",
+    method: status === "CANCELLED" ? "CANCEL" : "REQUEST",
     status,
     ...(event.hideCalendarEventDetails ? { classification: "PRIVATE" } : {}),
     busyStatus: "BUSY",

@@ -12,7 +12,7 @@ export enum GenerateIcsRole {
 type GenerateIcsFileResult = {
   filename: string;
   content: string | undefined;
-  method: "REQUEST";
+  method: "REQUEST" | "CANCEL";
 } | null;
 
 export default function generateIcsFile({
@@ -52,6 +52,6 @@ export default function generateIcsFile({
       organizerEmailOverride,
       t,
     }),
-    method: "REQUEST",
+    method: status === "CANCELLED" ? "CANCEL" : "REQUEST",
   };
 }
