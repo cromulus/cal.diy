@@ -3334,6 +3334,7 @@ __metadata:
     "@hookform/error-message": "npm:2.0.0"
     "@hookform/resolvers": "npm:2.9.7"
     "@microsoft/microsoft-graph-types-beta": "npm:0.15.0-preview"
+    "@modelcontextprotocol/sdk": "npm:1.26.0"
     "@next-auth/prisma-adapter": "npm:1.0.4"
     "@next/bundle-analyzer": "npm:16.1.5"
     "@next/third-parties": "npm:14.2.5"
