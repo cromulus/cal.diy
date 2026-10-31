@@ -32,8 +32,7 @@ The deployed Codex public client is `a61fbea4-d9d2-4eeb-b1be-5597cf4c14af`:
 
 ```sh
 codex mcp add cal-diy --url https://cal.nmc-atelier.com/api/mcp \
-  --oauth-client-id a61fbea4-d9d2-4eeb-b1be-5597cf4c14af \
-  --oauth-resource https://cal.nmc-atelier.com/api/mcp
+  --oauth-client-id a61fbea4-d9d2-4eeb-b1be-5597cf4c14af
 codex mcp login cal-diy --scopes cal:mcp
 ```
 
