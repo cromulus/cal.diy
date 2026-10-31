@@ -28,6 +28,19 @@ Codex supports remote HTTP MCP and either CIMD or an explicitly registered publi
 OAuth client. Register its loopback callback with Pocket ID and grant the API
 permission before connecting. Do not reuse the website's confidential OAuth client.
 
+The deployed Codex public client is `a61fbea4-d9d2-4eeb-b1be-5597cf4c14af`:
+
+```sh
+codex mcp add cal-diy --url https://cal.nmc-atelier.com/api/mcp \
+  --oauth-client-id a61fbea4-d9d2-4eeb-b1be-5597cf4c14af \
+  --oauth-resource https://cal.nmc-atelier.com/api/mcp
+codex mcp login cal-diy --scopes cal:mcp
+```
+
+Its registered callbacks are `http://127.0.0.1/callback` and
+`http://127.0.0.1/callback/LFJskw3Ix0RZ`; Pocket ID permits ephemeral loopback ports.
+No client secret is required. Claude uses its existing published identity.
+
 ## Tools
 
 - `list_event_types`: personal event types associated with the authenticated user,
