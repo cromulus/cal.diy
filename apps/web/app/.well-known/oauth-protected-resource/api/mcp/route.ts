@@ -1,6 +1,8 @@
 import process from "node:process";
 import { MCP_SCOPE, mcpResource } from "@lib/mcp/oidc";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(): Promise<Response> {
   const issuer = process.env.OIDC_ISSUER?.trim().replace(/\/$/, "");
   if (process.env.MCP_ENABLED !== "true" || process.env.OIDC_LOGIN_ENABLED !== "true" || !issuer) {
