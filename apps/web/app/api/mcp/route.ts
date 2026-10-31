@@ -1,6 +1,7 @@
 import process from "node:process";
 import { checkRateLimitAndThrowError } from "@calcom/lib/checkRateLimitAndThrowError";
 import { authenticateMcp } from "@lib/mcp/auth";
+import { MCP_SCOPE, mcpMetadataUrl } from "@lib/mcp/oidc";
 import { createMcpServer } from "@lib/mcp/server";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 
@@ -13,7 +14,14 @@ export async function POST(request: Request): Promise<Response> {
     return new Response(null, { status: 403 });
   }
   const user = await authenticateMcp(request);
-  if (!user) return new Response(null, { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
+  if (!user)
+    return new Response(null, {
+      status: 401,
+      headers: {
+        "WWW-Authenticate": `Bearer resource_metadata="${mcpMetadataUrl()}", scope="${MCP_SCOPE}"`,
+        "Cache-Control": "no-store",
+      },
+    });
   try {
     await checkRateLimitAndThrowError({ identifier: `mcp:${user.id}`, rateLimitingType: "core" });
   } catch {

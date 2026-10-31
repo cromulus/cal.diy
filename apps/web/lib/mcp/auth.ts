@@ -1,11 +1,13 @@
 import process from "node:process";
 import { hashAPIKey } from "@calcom/features/api-keys-legacy/api-keys/lib/apiKeys";
 import prisma from "@calcom/prisma";
+import { authenticateOidc } from "./oidc";
 
 export async function authenticateMcp(request: Request) {
   const token = request.headers.get("authorization")?.match(/^Bearer (\S+)$/i)?.[1];
   const prefix = process.env.API_KEY_PREFIX ?? "cal_";
-  if (!token?.startsWith(prefix)) return null;
+  if (!token) return null;
+  if (!token.startsWith(prefix)) return authenticateOidc(token);
   const key = await prisma.apiKey.findUnique({
     where: { hashedKey: hashAPIKey(token.slice(prefix.length)) },
     select: {
